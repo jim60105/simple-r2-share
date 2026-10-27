@@ -16,8 +16,12 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261027.1",
+    "@types/picomatch": "4.0.3",
     "typescript": "7.0.2",
     "vitest": "5.0.5",
     "wrangler": "4.153.0"
+  },
+  "dependencies": {
+    "picomatch": "4.0.7"
   }
 }
