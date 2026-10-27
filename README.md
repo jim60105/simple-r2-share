@@ -63,7 +63,7 @@ Open **Workers & Pages**, select the Pages project, then go to **Settings**:
 
 Production and Preview deployments have separate settings. Fill in both if you use preview deployments, or Preview will get the generic error page. Changes to bindings and variables take effect on the next deployment, so redeploy after editing them.
 
-The committed `wrangler.toml` deliberately has no `pages_build_output_dir` key, so Pages ignores it and the dashboard stays editable ([docs](https://developers.cloudflare.com/pages/functions/wrangler-configuration/#projects-with-existing-wrangler-file)). Don't add that key: once it's there, the file becomes the project's source of truth and its local placeholder values would be deployed ([docs](https://developers.cloudflare.com/pages/functions/wrangler-configuration/#source-of-truth)).
+The committed `wrangler.toml` deliberately has no `pages_build_output_dir` key, so Pages ignores it and the dashboard stays editable ([docs](https://developers.cloudflare.com/pages/functions/wrangler-configuration/#projects-with-existing-wrangler-file)). Don't add that key. Once it's there, the file becomes the project's source of truth and its local placeholder values would be deployed ([docs](https://developers.cloudflare.com/pages/functions/wrangler-configuration/#source-of-truth)).
 
 ### Local settings
 
@@ -92,7 +92,7 @@ With this file:
 | --- | --- |
 | `/share/releases/project-a/` | Page listing every file under `releases/project-a/`, at any depth |
 | `/share/releases/project-a/docs/` | `404`. An exact rule doesn't give subfolders their own page. |
-| `/share/releases/project-a2/` | `404`. Matching uses whole path segments, not string prefixes. |
+| `/share/releases/project-a2/` | `404`. Rules compare whole path segments, so `project-a` doesn't match `project-a2`. |
 | `/share/releases/project-b/` and `/share/releases/project-b/sub/` | Pages, without anything under `private/` |
 | `/share/releases/project-b/private/` | `404` |
 
@@ -188,13 +188,13 @@ npm test                 # Vitest
 npm run typecheck        # tsc --noEmit
 ```
 
-Layout: `functions/` holds the thin Pages Functions entry points, `src/` the logic (`rules`, `paths`, `listing`, `readme`, `html`, `zip-stream`, and the two route handlers), `public/` the static theme, `scripts/build-fonts.mjs` the font build, `test/` the tests and `docs/` the design specs.
+`functions/` holds the thin Pages Functions entry points, `src/` the logic (`rules`, `paths`, `listing`, `readme`, `html`, `zip-stream`, and the two route handlers), `public/` the static theme, `scripts/build-fonts.mjs` the font build, `test/` the tests and `docs/` the design specs.
 
 ## Limits (Workers Free)
 
 The Workers Free plan allows **10 ms of CPU time per request**, 128 MB of memory, and 1,000 subrequests to Cloudflare services such as R2 per request ([limits](https://developers.cloudflare.com/workers/platform/limits/)). Time spent waiting on R2 doesn't count as CPU time.
 
-- **Share pages.** Typical shares (up to about 100 files) render well within the CPU budget. A README larger than 64 KiB is skipped (no README panel) rather than rendered. As a safety net, a share whose listing exceeds 10,000 objects or 100 `list()` pages gets the generic error page instead of a partial tree. These caps are intentional and final.
+- **Share pages.** Typical shares (up to about 100 files) render well within the CPU budget. A README larger than 64 KiB is skipped, so the page has no README panel. As a safety net, a share whose listing exceeds 10,000 objects or 100 `list()` pages gets the generic error page, and the site never shows a partial tree. These caps are intentional and final.
 - **ZIP downloads** stream STORE entries (no compression) with data descriptors and ZIP64 when needed, and a `Content-Length` computed up front. Memory stays small, but **CRC-32 is computed in JavaScript over every byte**. On the Free plan's 10 ms budget that probably limits a ZIP to a few MB. Past that the download fails partway (it never ends looking complete). **The real limit has to be measured after deployment** (see the checklist). If it's too low, keep `ENABLE_ZIP_DOWNLOAD` off or move to Workers Paid.
 - **ZIP subrequests.** One ZIP may plan at most 900 R2 calls (1 for the rules, plus one per `list()` page, plus one per file). A bigger share gets the generic error page before any bytes are sent.
 - An object that changes size or disappears between listing and download aborts the ZIP. There is no snapshot across objects.

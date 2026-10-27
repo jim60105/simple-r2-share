@@ -8,11 +8,11 @@
 | 項目 | 選擇 | 理由 |
 | --- | --- | --- |
 | 語言 | TypeScript | Pages Functions 原生支援 |
-| 執行環境 | Cloudflare Pages Functions + R2 binding | 依規格 |
+| 執行環境 | Cloudflare Pages Functions + R2 繫結（binding） | 依規格 |
 | 測試 | Vitest，搭配記憶體內的假 R2 Bucket | 純函式模組可直接測試，不需要連線 |
-| 規則比對 | 自行解析規則檔的每一行，glob 比對交給 `picomatch` | 規格要求的「精確目錄」與「`/**`」語意和 gitignore 的父目錄繼承不同，自行掌握比較可靠 |
+| 規則比對 | 自行解析規則檔的每一行，萬用字元樣式（glob）比對交給 `picomatch` | 規格要求的「精確目錄」與「`/**`」語意和 gitignore 的父目錄繼承不同，自行掌握比較可靠 |
 | Markdown | `markdown-it`，`html: false` | 預設停用原始 HTML，內建擋下 `javascript:` 等危險協定，可覆寫連結與圖片的輸出 |
-| ZIP | `client-zip` | 只產生 STORE（method 0），支援串流與 ZIP64，可在 Workers 中執行 |
+| ZIP | `client-zip` | 只產生 STORE（壓縮方法 0），支援串流與 ZIP64，可在 Workers 中執行 |
 | Chakra Petch | `@fontsource/chakra-petch`，鎖定確切版本 | 由 `package-lock.json` 的 integrity 驗證內容 |
 | Jim Mono TC | 建置腳本下載 `v0.4.0` 的 web zip，用 SHA-256 驗證 | 依 UI 規格第 4.1 節 |
 
@@ -51,9 +51,10 @@ test/
 ### 1. 專案骨架
 
 - 建立 `package.json`、`tsconfig.json`、`vitest.config.ts`、`.gitignore`（排除 `node_modules/`、`public/fonts/`、`.wrangler/`）。
-- 建立 `wrangler.toml`：設定 `pages_build_output_dir = "public"`、R2 binding `BUCKET`，以及 `R2_PUBLIC_BASE_URL`、`ENABLE_ZIP_DOWNLOAD`、`SHARE_RULES_KEY`、`FOOTER_HTML` 四個變數。
+- 建立 `wrangler.toml`：設定 `pages_build_output_dir = "public"`、R2 繫結 `BUCKET`，以及 `R2_PUBLIC_BASE_URL`、`ENABLE_ZIP_DOWNLOAD`、`SHARE_RULES_KEY`、`FOOTER_HTML` 四個變數。
+  - 實作完成後改為在 Cloudflare 後台管理正式環境設定，`wrangler.toml` 移除 `pages_build_output_dir`，只供本機開發使用。
 - npm scripts：`build`（執行 `scripts/build-fonts.mjs`）、`dev`（`wrangler pages dev`）、`test`、`typecheck`。
-- `src/config.ts`：讀取設定並套用預設值。`ENABLE_ZIP_DOWNLOAD` 只有字串 `true` 才算啟用；`R2_PUBLIC_BASE_URL` 必須是 `https://` 開頭，否則視為設定錯誤。
+- `src/config.ts`：讀取設定並套用預設值。`ENABLE_ZIP_DOWNLOAD` 必須完全等於字串 `true` 才算啟用；`R2_PUBLIC_BASE_URL` 必須是 `https://` 開頭，否則視為設定錯誤。
 
 ### 2. `paths`
 
@@ -71,7 +72,7 @@ test/
 ### 3. `rules`
 
 - 解析規則檔：註解、空行、`\#` 與 `\!` 跳脫、結尾空白、`!` 排除。
-- 每條規則記錄三件事：glob 本體、是否為排除、是否以 `/**` 結尾。
+- 每條規則記錄萬用字元本體、是否為排除、是否以 `/**` 結尾。
 - `isShareRoot(dir)`：
   - 依序套用所有規則，以最後一條符合的規則決定結果，而且結果必須是允許。
   - 精確目錄規則只符合該目錄本身。
@@ -100,7 +101,7 @@ test/
 - `markdown-it` 設定 `html: false`，並覆寫以下輸出規則：
   - **相對連結與圖片**：用 `paths` 解析。結果合法且沒有被排除時，改寫成 R2 公開網址；否則依 UI 規格第 5.4 節輸出成無法使用的樣式。
   - **外部連結**：只保留 `http:` 與 `https:`，其餘協定一律視為無法使用。
-  - **標題**：`#` 輸出成 `<h3>`，依序降級，`####` 以下都輸出成 `<h6>`。每個標題另加 `md-h1` 到 `md-h6` class，CSS 依這個 class 決定字級。
+  - **標題**：`#` 輸出成 `<h3>`，依序降級，`####` 以下都輸出成 `<h6>`。每個標題另加 `md-h1` 到 `md-h6` 的 CSS 類別（class），CSS 依這個類別決定字級。
   - **表格**：包在 `<div class="table-scroll">` 中。
 - 測試：選擇順序、`../` 越界、指向被排除物件、`javascript:` 連結、原始 HTML 被跳脫、標題降級。
 
@@ -110,7 +111,7 @@ test/
   - `<head>` 載入 `/fonts/JimMonoTC.css`、`/assets/theme.css`、`/favicon.svg`。
   - 頁面開頭內嵌 5 個 SVG `<symbol>`。
   - 頂部列顯示 Logo 與 `SYNCED` 時間。
-  - 只有 `FOOTER_HTML` 有值時，才原樣輸出頁尾。
+  - `FOOTER_HTML` 有值時才原樣輸出頁尾。
 - 分享頁：標題區塊、統計列、選用的 `Download all`、檔案樹（`<details open>`）、選用的 README 面板。
 - 空目錄、`404`、通用錯誤頁的文字與 `<title>` 依 UI 規格第 7 節。
 - 所有動態文字都經過 HTML 跳脫，只有 `FOOTER_HTML` 例外。
@@ -146,7 +147,7 @@ test/
 - ZIP 內的路徑以分享根目錄為基準，包含 README。
 - 串流途中讀取失敗時，記錄錯誤並中止串流，不讓瀏覽器收到看似完整的 ZIP。
 - 回應標頭：`Content-Disposition: attachment; filename="<最後一段>.zip"`，檔名經過 RFC 5987 編碼。
-- 測試：用 `unzip -v` 或 JS 解析確認每個項目都是 method 0、路徑正確、沒有被排除的檔案；另外測試串流途中物件消失的情況。
+- 測試：用 `unzip -v` 或 JS 解析確認每個項目都是壓縮方法 0、路徑正確、沒有被排除的檔案；另外測試串流途中物件消失的情況。
 
 ### 10. 整體驗證與部署說明
 
