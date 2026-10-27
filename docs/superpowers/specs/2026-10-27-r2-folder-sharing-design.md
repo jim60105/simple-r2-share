@@ -16,7 +16,7 @@
 
 ## 2. 已確認的選擇
 
-- 以 Cloudflare Pages Functions 直接產生完整 HTML；少量前端 JavaScript 只負責樹狀清單展開或收合。
+- 以 Cloudflare Pages Functions 直接產生完整 HTML；樹狀清單以原生 `<details>` 展開或收合，不需要前端 JavaScript。視覺主題見 [分享頁 UI 主題設計規格](2026-10-27-ui-theme-design.md)。
 - Bucket 既有公開網址維持開放。單檔連結、Markdown 圖片與其他合法相對資源使用 R2 公開網址，不經 Functions 代理。
 - 以允許清單的反轉 `.gitignore` 語意管理分享根目錄。預設拒絕；一般規則允許，`!` 排除。
 - 精確目錄規則只核准該目錄擁有分享頁；`/**` 類型規則可核准該目錄及子目錄各自擁有分享頁。
@@ -37,6 +37,7 @@
 | `R2_PUBLIC_BASE_URL` | 既有 R2 公開檔案網域 | 必須設定，固定可信的 HTTPS 網址 |
 | `ENABLE_ZIP_DOWNLOAD` | 是否顯示「下載全部」並啟用 ZIP 端點 | `false`；僅字串 `true` 啟用 |
 | `SHARE_RULES_KEY` | 規則物件鍵名 | `.r2-share-rules` |
+| `FOOTER_HTML` | 頁尾的單行 HTML，原樣渲染；只限管理者輸入的受信任內容 | 未設定，不顯示頁尾 |
 
 以上設定由部署環境管理；其中 ZIP 開關屬部署設定，R2 檔案及分享規則則在每次相關請求重新讀取，無須重新部署程式。
 
