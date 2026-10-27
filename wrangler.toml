@@ -1,0 +1,19 @@
+"$schema" = "./node_modules/wrangler/config-schema.json"
+name = "simple-r2-share"
+pages_build_output_dir = "public"
+compatibility_date = "2026-10-23"
+
+# CHANGE ME: the R2 bucket that holds the shared files and `.r2-share-rules`.
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "your-bucket-name"
+
+[vars]
+# CHANGE ME: the bucket's existing public HTTPS base URL (custom domain or r2.dev).
+R2_PUBLIC_BASE_URL = "https://files.example.com"
+# Only the exact string "true" enables the "Download all" ZIP endpoint.
+ENABLE_ZIP_DOWNLOAD = "false"
+# Object key of the share rules file, relative to the bucket root.
+SHARE_RULES_KEY = ".r2-share-rules"
+# Trusted single-line footer HTML, rendered verbatim. Empty means no footer.
+FOOTER_HTML = ""
