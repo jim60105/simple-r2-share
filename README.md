@@ -1,6 +1,6 @@
 # Simple R2 Share
 
-Read-only folder sharing pages for a public [Cloudflare R2](https://developers.cloudflare.com/r2/) bucket, served by Cloudflare Pages Functions. You list the folders you want to share in one rules file at the bucket root. Each shared folder gets a page at `/share/<folder>/` with an expandable file tree, links to the files on the bucket's existing public URL, and the folder's `README.md` rendered underneath. A "Download all" ZIP button is optional. Every page is built from the bucket's current contents on each request, so there is nothing to publish or rebuild when files or rules change.
+Read-only folder sharing pages for a public [Cloudflare R2](https://developers.cloudflare.com/r2/) bucket, served by Cloudflare Pages Functions. The folders to share are listed in one rules file at the bucket root. Each shared folder gets a page at `/share/<folder>/` with an expandable file tree, links to the files on the bucket's existing public URL, and the folder's `README.md` rendered underneath. A "Download all" ZIP button is optional. Every page is built from the bucket's current contents on each request, so there is nothing to publish or rebuild when files or rules change.
 
 **Features**
 
@@ -30,7 +30,7 @@ GET /share/releases/project-a/
 
 | URL | What it does |
 | --- | --- |
-| `/share/<dir>/` | Share page for the bucket folder `<dir>`, for example `/share/releases/project-a/`. Each path segment is percent-encoded once (`/share/releases/%E5%B0%88%E6%A1%88/`). Without the trailing `/` you get a `308` redirect to it. |
+| `/share/<dir>/` | Share page for the bucket folder `<dir>`, for example `/share/releases/project-a/`. Each path segment is percent-encoded once (`/share/releases/%E5%B0%88%E6%A1%88/`). Without the trailing `/` the server responds with a `308` redirect to it. |
 | `/api/share-zip?dir=<dir>` | ZIP of the same share, for example `/api/share-zip?dir=releases%2Fproject-a`. Gives `404` unless `ENABLE_ZIP_DOWNLOAD` is `"true"`, and also for any share that the page would `404` on or that has no files. The archive is named after the folder (`project-a.zip`). |
 
 Every share that doesn't exist, isn't allowed, is excluded, or has an invalid URL gets the same `404` page, so a visitor can't tell which reason applied. R2 errors and invalid settings get a generic error page (`500`). The details are only written to the Functions log. Methods other than `GET` and `HEAD` get `405`.
@@ -43,7 +43,7 @@ Every share that doesn't exist, isn't allowed, is excluded, or has an invalid UR
 
 ## Configuration
 
-In production, every setting lives in the Cloudflare dashboard, so you deploy this repository without editing any file in it. [`wrangler.toml`](wrangler.toml) is for local development only (see [Dashboard settings](#dashboard-settings)).
+In production, every setting lives in the Cloudflare dashboard, allowing deployment of this repository without editing any file in it. [`wrangler.toml`](wrangler.toml) is for local development only (see [Dashboard settings](#dashboard-settings)).
 
 | Setting | Required | Meaning |
 | --- | --- | --- |
@@ -61,7 +61,7 @@ Open **Workers & Pages**, select the Pages project, then go to **Settings**:
 - **Variables and Secrets** > **Add**: add `R2_PUBLIC_BASE_URL` and any optional variables as plain-text variables.
 - **Runtime** > **Compatibility date**: `2026-10-23` or later.
 
-Production and Preview deployments have separate settings. Fill in both if you use preview deployments, or Preview will get the generic error page. Changes to bindings and variables take effect on the next deployment, so redeploy after editing them.
+Production and Preview deployments have separate settings. Fill in both when preview deployments are enabled, or Preview will get the generic error page. Changes to bindings and variables take effect on the next deployment, so redeploy after editing them.
 
 The committed `wrangler.toml` deliberately has no `pages_build_output_dir` key, so Pages ignores it and the dashboard stays editable ([docs](https://developers.cloudflare.com/pages/functions/wrangler-configuration/#projects-with-existing-wrangler-file)). Don't add that key. Once it's there, the file becomes the project's source of truth and its local placeholder values would be deployed ([docs](https://developers.cloudflare.com/pages/functions/wrangler-configuration/#source-of-truth)).
 
@@ -73,7 +73,7 @@ Changes to R2 objects and to the rules file **do not** need a deployment. The ne
 
 ## Rules file
 
-`.r2-share-rules` (or your `SHARE_RULES_KEY`) is one UTF-8 text object at the bucket root, edited only by the admin. Nothing is shared until a rule allows it.
+`.r2-share-rules` (or the configured `SHARE_RULES_KEY`) is one UTF-8 text object at the bucket root, edited only by the admin. Nothing is shared until a rule allows it.
 
 ```gitignore
 # Share exactly this folder (with everything below it on one page)
@@ -127,13 +127,13 @@ npx wrangler r2 object put <bucket-name>/.r2-share-rules --file ./r2-share-rules
 
 ## Deploy
 
-You don't need to edit any file in this repository. The project name, the bucket and the variables are all set in the Cloudflare dashboard.
+Deploying requires no edits to any file in this repository. The project name, the bucket and the variables are all set in the Cloudflare dashboard.
 
 The build (`npm run build`, i.e. `scripts/build-fonts.mjs`) downloads the pinned Jim Mono TC web font release from GitHub, checks its SHA-256 (a mismatch fails the build), and writes `public/fonts/` together with Chakra Petch from `@fontsource/chakra-petch`. `public/fonts/` is generated and git-ignored. The Pages Functions in `functions/` are bundled by Pages itself.
 
 ### Option A: Git integration
 
-1. Push this repository (or your fork) to GitHub or GitLab.
+1. Push this repository (or a fork) to GitHub or GitLab.
 2. In the dashboard, go to **Workers & Pages** > **Create application** > **Pages** > **Connect to Git**, then pick the repository.
 3. Build settings: framework preset *None*, **build command** `npm run build`, **build output directory** `public`.
 4. Add the build environment variable `NODE_VERSION` = `22` (any version ≥ 22.12.0). The current build image already defaults to Node 22, but it does not read `engines` from `package.json`, so pinning the version keeps the build reproducible.
@@ -175,8 +175,8 @@ npm run dev              # wrangler pages dev → http://localhost:8788
 `npm run dev` uses a local, simulated R2 bucket stored in `.wrangler/state/`, named after `bucket_name` in `wrangler.toml`. Seed it with `--local`:
 
 ```sh
-npx wrangler r2 object put your-bucket-name/.r2-share-rules --file ./rules.txt --local
-npx wrangler r2 object put your-bucket-name/releases/project-a/README.md --file ./README.md --local
+npx wrangler r2 object put <bucket-name>/.r2-share-rules --file ./rules.txt --local
+npx wrangler r2 object put <bucket-name>/releases/project-a/README.md --file ./README.md --local
 ```
 
 Then open `http://localhost:8788/share/releases/project-a/`. File links and README images still point at `R2_PUBLIC_BASE_URL`, because the local bucket isn't served publicly. Use `.dev.vars` to change variables locally (for example `ENABLE_ZIP_DOWNLOAD="true"`).
@@ -202,17 +202,17 @@ The Workers Free plan allows **10 ms of CPU time per request**, 128 MB of memory
 
 ## Post-deploy checklist
 
-1. **Share page.** Open `https://<your-site>/share/<an allowed dir>/`. Check the tree, sizes, README, and that a file link opens on your R2 public URL.
+1. **Share page.** Open `https://<site-domain>/share/<an allowed dir>/`. Check the tree, sizes, README, and that a file link opens on the R2 public URL.
 2. **404.** Open an unlisted folder, a subfolder of an exact rule, and an excluded folder. All three should show the same "Share not found" page.
 3. **Live updates.** Upload a file and edit the rules file, then reload. The changes show up without a redeploy.
 4. **ZIP off/on.** With `ENABLE_ZIP_DOWNLOAD = "false"` there is no "Download all" button and `/api/share-zip?dir=…` returns `404`. Set it to `"true"` in the dashboard, redeploy, and check that the button appears and the archive passes `unzip -t`.
-5. **CPU test with real files (required if ZIP is on, spec §7.1).** Make a test share with files of increasing size (for example 1 MB, 5 MB, 20 MB) and download each share's ZIP while you watch the logs:
+5. **CPU test with real files (required if ZIP is on, spec §7.1).** Make a test share with files of increasing size (for example 1 MB, 5 MB, 20 MB) and download each share's ZIP while monitoring the logs:
 
    ```sh
    npx wrangler pages deployment tail --project-name <project-name> --format pretty
    ```
 
-   A request over the CPU limit is logged with an error outcome such as `exceededCpu` (add `--status error` to see only failures). In the browser it appears as a failed download or Cloudflare error 1102. The project's **Functions** metrics in the dashboard show the same errors. Write down the largest share that still downloads reliably and tell your users, or turn ZIP off.
+   A request over the CPU limit is logged with an error outcome such as `exceededCpu` (add `--status error` to see only failures). In the browser it appears as a failed download or Cloudflare error 1102. The project's **Functions** metrics in the dashboard show the same errors. Record the largest share that still downloads reliably and communicate this limit to end users, or turn ZIP off.
 
 ## Fonts and licenses
 
