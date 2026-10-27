@@ -1,5 +1,7 @@
 # Simple R2 Share
 
+[[English](README.md) | [正體中文](README.zh.md)]
+
 這是一套公開 [Cloudflare R2](https://developers.cloudflare.com/r2/) 儲存貯體專用的唯讀資料夾分享頁面，透過 Cloudflare Pages Functions 提供服務。使用者在儲存貯體根目錄維護一份規則檔案，列出想要分享的資料夾。每個分享的資料夾都會在 `/share/<資料夾>/` 產生獨立頁面，提供可展開的檔案樹狀圖、指向儲存貯體現有公開 URL 的檔案連結，並在下方呈現該資料夾的 `README.md`。系統也支援選用的「全部下載」ZIP 打包下載功能。每份頁面皆在收到請求時從儲存貯體當前內容即時建置，因此更新檔案或規則時無需重新發布或建置。
 
 **功能特點**

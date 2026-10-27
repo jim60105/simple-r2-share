@@ -1,5 +1,7 @@
 # Simple R2 Share
 
+[[English](README.md) | [正體中文](README.zh.md)]
+
 Read-only folder sharing pages for a public [Cloudflare R2](https://developers.cloudflare.com/r2/) bucket, served by Cloudflare Pages Functions. The folders to share are listed in one rules file at the bucket root. Each shared folder gets a page at `/share/<folder>/` with an expandable file tree, links to the files on the bucket's existing public URL, and the folder's `README.md` rendered underneath. A "Download all" ZIP button is optional. Every page is built from the bucket's current contents on each request, so there is nothing to publish or rebuild when files or rules change.
 
 **Features**
