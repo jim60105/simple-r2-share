@@ -18,13 +18,17 @@
  * Any exception (R2 errors, `RulesReadError`, `ListingError`, bugs) is logged
  * with `console.error` and answered with the generic error page `500`, which
  * never contains error details. Other methods get `405` with `Allow`.
+ *
+ * The response helpers and `loadAuthorisedRules` are shared with the ZIP
+ * endpoint (`src/zip-handler.ts`), so both routes answer `404`, `405` and
+ * `500` with the same bytes and authorise share roots the same way.
  */
 import { footerHtmlFromEnv, loadConfig, type AppConfig, type Env } from "./config";
 import { renderErrorPage, renderNotFoundPage, renderSharePage } from "./html";
 import { loadListing } from "./listing";
 import { parseSharePath, sharePagePath, toPrefix } from "./paths";
 import { loadReadme, MAX_README_BYTES, selectReadme } from "./readme";
-import { loadRules } from "./rules";
+import { loadRules, type Rules } from "./rules";
 
 export const ALLOWED_METHODS = "GET, HEAD";
 
@@ -82,6 +86,47 @@ function htmlResponse(status: number, html: string, config: AppConfig | null, he
   return new Response(head ? null : html, { status, headers: responseHeaders(HTML_TYPE, imageOriginOf(config)) });
 }
 
+/** `405` for anything but `GET` / `HEAD`, with `Allow`. */
+export function methodNotAllowedResponse(): Response {
+  const headers = responseHeaders(TEXT_TYPE, null);
+  headers.set("Allow", ALLOWED_METHODS);
+  return new Response("Method Not Allowed\n", { status: 405, headers });
+}
+
+/** The single `404` page, identical for every reason a share is not available. */
+export function notFoundResponse(config: AppConfig, now: Date, head: boolean): Response {
+  return htmlResponse(404, renderNotFoundPage(config, now), config, head);
+}
+
+/**
+ * The generic error page `500`. `config` is `null` when the configuration
+ * could not be loaded; the footer then comes from `FOOTER_HTML` alone.
+ */
+export function errorResponse(env: Env, config: AppConfig | null, now: Date, head: boolean): Response {
+  const footer = { footerHtml: config?.footerHtml ?? footerHtmlFromEnv(env) };
+  return htmlResponse(500, renderErrorPage(footer, now), config, head);
+}
+
+/**
+ * Reads the share rules and returns them if `segments` is an authorised share
+ * root, otherwise `null` (answer with `notFoundResponse`). A missing or
+ * invalid rules file authorises nothing; the reason is logged with `logLabel`
+ * as prefix and never shown to visitors. R2 errors propagate.
+ */
+export async function loadAuthorisedRules(
+  bucket: R2Bucket,
+  config: AppConfig,
+  segments: readonly string[],
+  logLabel: string,
+): Promise<Rules | null> {
+  const rules = await loadRules(bucket, config.shareRulesKey);
+  if (rules.status !== "loaded") {
+    // Deny-all rules: the visitor sees the ordinary 404.
+    console.error(`${logLabel}: share rules are ${rules.status}: ${rules.problem ?? "unknown problem"}`);
+  }
+  return rules.isShareRoot(segments) ? rules : null;
+}
+
 type Outcome =
   | { readonly kind: "page"; readonly html: string }
   | { readonly kind: "not-found" }
@@ -93,11 +138,7 @@ type Outcome =
  */
 export async function handleShareRequest(request: Request, env: Env, now: Date = new Date()): Promise<Response> {
   const head = request.method === "HEAD";
-  if (request.method !== "GET" && !head) {
-    const headers = responseHeaders(TEXT_TYPE, null);
-    headers.set("Allow", ALLOWED_METHODS);
-    return new Response("Method Not Allowed\n", { status: 405, headers });
-  }
+  if (request.method !== "GET" && !head) return methodNotAllowedResponse();
 
   let config: AppConfig | null = null;
   try {
@@ -107,7 +148,7 @@ export async function handleShareRequest(request: Request, env: Env, now: Date =
       case "page":
         return htmlResponse(200, outcome.html, config, head);
       case "not-found":
-        return htmlResponse(404, renderNotFoundPage(config, now), config, head);
+        return notFoundResponse(config, now, head);
       case "redirect": {
         const headers = responseHeaders(null, imageOriginOf(config));
         headers.set("Location", outcome.location);
@@ -116,8 +157,7 @@ export async function handleShareRequest(request: Request, env: Env, now: Date =
     }
   } catch (error) {
     console.error("share page: request failed", error);
-    const footer = { footerHtml: config?.footerHtml ?? footerHtmlFromEnv(env) };
-    return htmlResponse(500, renderErrorPage(footer, now), config, head);
+    return errorResponse(env, config, now, head);
   }
 }
 
@@ -128,12 +168,8 @@ async function resolveShare(pathname: string, bucket: R2Bucket, config: AppConfi
     return withSlash === null ? { kind: "not-found" } : { kind: "redirect", location: sharePagePath(withSlash) };
   }
 
-  const rules = await loadRules(bucket, config.shareRulesKey);
-  if (rules.status !== "loaded") {
-    // Deny-all rules: the visitor sees the ordinary 404 below.
-    console.error(`share page: share rules are ${rules.status}: ${rules.problem ?? "unknown problem"}`);
-  }
-  if (!rules.isShareRoot(segments)) return { kind: "not-found" };
+  const rules = await loadAuthorisedRules(bucket, config, segments, "share page");
+  if (rules === null) return { kind: "not-found" };
 
   const listing = await loadListing(bucket, toPrefix(segments), rules);
   const readmeFile = selectReadme(listing);
