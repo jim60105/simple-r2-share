@@ -26,6 +26,8 @@ function compareKeys(a: string, b: string): number {
 
 export class FakeBucket {
   readonly objects = new Map<string, Uint8Array>();
+  /** `uploaded` per key; keys without an entry report `new Date(0)`. */
+  readonly uploaded = new Map<string, Date>();
   pageSize: number;
   /** Makes `get(key)` reject. */
   failGet: FailureHook<string> | null = null;
@@ -33,6 +35,8 @@ export class FakeBucket {
   failBody: FailureHook<string> | null = null;
   /** Makes `list(options)` reject. */
   failList: FailureHook<R2ListOptions> | null = null;
+  /** Rewrites each `list()` page before it is returned, e.g. to fake a cursor that never advances. */
+  mapList: ((page: R2Objects, options: R2ListOptions) => R2Objects) | null = null;
   readonly getCalls: string[] = [];
   readonly listCalls: R2ListOptions[] = [];
 
@@ -40,8 +44,10 @@ export class FakeBucket {
     this.pageSize = options.pageSize ?? 1000;
   }
 
-  put(key: string, body: string | Uint8Array = ""): this {
+  put(key: string, body: string | Uint8Array = "", uploaded?: Date): this {
     this.objects.set(key, typeof body === "string" ? encoder.encode(body) : body);
+    if (uploaded === undefined) this.uploaded.delete(key);
+    else this.uploaded.set(key, uploaded);
     return this;
   }
 
@@ -96,10 +102,11 @@ export class FakeBucket {
     const page = keys.slice(0, limit);
     const objects = page.map((key) => this.#metadata(key, this.objects.get(key) as Uint8Array) as unknown as R2Object);
     const last = page[page.length - 1];
-    if (keys.length > page.length && last !== undefined) {
-      return { objects, delimitedPrefixes: [], truncated: true, cursor: last };
-    }
-    return { objects, delimitedPrefixes: [], truncated: false };
+    const result: R2Objects =
+      keys.length > page.length && last !== undefined
+        ? { objects, delimitedPrefixes: [], truncated: true, cursor: last }
+        : { objects, delimitedPrefixes: [], truncated: false };
+    return this.mapList ? this.mapList(result, options) : result;
   }
 
   #metadata(key: string, bytes: Uint8Array) {
@@ -109,7 +116,7 @@ export class FakeBucket {
       size: bytes.byteLength,
       etag: "fake",
       httpEtag: '"fake"',
-      uploaded: new Date(0),
+      uploaded: this.uploaded.get(key) ?? new Date(0),
       storageClass: "Standard",
       checksums: {},
       httpMetadata: {},
