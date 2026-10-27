@@ -135,7 +135,7 @@ Each push to the production branch redeploys. Other branches get preview deploym
 npm ci
 npm run build
 npx wrangler login
-npx wrangler pages project create <project-name> --production-branch main   # first time only; same name as in wrangler.toml
+npx wrangler pages project create <project-name> --production-branch master   # first time only; same name as in wrangler.toml
 npx wrangler pages deploy
 ```
 
