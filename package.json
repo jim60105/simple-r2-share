@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "node scripts/build-fonts.mjs",
-    "dev": "wrangler pages dev",
+    "dev": "wrangler pages dev public",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

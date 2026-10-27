@@ -43,19 +43,31 @@ Every share that doesn't exist, isn't allowed, is excluded, or has an invalid UR
 
 ## Configuration
 
-All settings live in [`wrangler.toml`](wrangler.toml):
+In production, every setting lives in the Cloudflare dashboard, so you deploy this repository without editing any file in it. [`wrangler.toml`](wrangler.toml) is for local development only (see [Dashboard settings](#dashboard-settings)).
 
 | Setting | Required | Meaning |
 | --- | --- | --- |
-| `[[r2_buckets]]` binding `BUCKET` | yes | The bucket to share from. Set `bucket_name`. Keep the binding name `BUCKET`. |
+| R2 binding `BUCKET` | yes | The bucket to share from. The binding name must be exactly `BUCKET`. |
 | `R2_PUBLIC_BASE_URL` | yes | The bucket's public base URL, such as `https://files.example.com` or `https://pub-….r2.dev`. Must start with `https://` and must not contain credentials, a `?query` or a `#fragment`. A path prefix is allowed (`https://cdn.example.com/bucket`) and trailing slashes are ignored. Object URLs are built as `<base>/<key, each segment percent-encoded>`. If the value is missing or invalid, every request gets the generic error page. |
 | `ENABLE_ZIP_DOWNLOAD` | no | Only the exact string `"true"` turns on the "Download all" button and `/api/share-zip`. Any other value (`"TRUE"`, `"1"`, empty) leaves it off. Default `"false"`. |
 | `SHARE_RULES_KEY` | no | Object key of the rules file, relative to the bucket root. Default `.r2-share-rules` (also used when the value is empty). |
 | `FOOTER_HTML` | no | One line of HTML rendered **unescaped** in a `<footer>` on every page, including 404 and error pages. Empty or unset means no footer. Treat it as code: only the site admin should be able to set it. The page's Content-Security-Policy still applies, so `<script>` doesn't run, `<style>` elements and external stylesheets are blocked, fonts load only from this site, and images load only from this site or the `R2_PUBLIC_BASE_URL` origin. Inline `style="…"` attributes and ordinary links work. Cloudflare limits a variable to 5 KB. |
 
-**`wrangler.toml` is the source of truth.** It contains `pages_build_output_dir`, so Cloudflare Pages treats it as the project's configuration ([docs](https://developers.cloudflare.com/pages/functions/wrangler-configuration/#source-of-truth)). Bindings, `vars` and the compatibility date can be seen in the dashboard but not edited there. To change a value, edit `wrangler.toml` and deploy again. The new value takes effect with that deployment. Pages also supports `[env.preview]` and `[env.production]` overrides in the same file. If you override one non-inheritable key such as `vars` or `r2_buckets` for an environment, you must override all of them for that environment ([docs](https://developers.cloudflare.com/pages/functions/wrangler-configuration/#configure-environments)).
+### Dashboard settings
 
-For local development, put overrides in a `.dev.vars` file next to `wrangler.toml` (it is git-ignored), for example `ENABLE_ZIP_DOWNLOAD="true"`. Values there replace `[vars]` when you run `wrangler pages dev`. You can also pass them as `--binding KEY=VALUE` on the command line.
+Open **Workers & Pages**, select the Pages project, then go to **Settings**:
+
+- **Bindings** > **Add** > **R2 bucket**: variable name `BUCKET`, then pick the bucket.
+- **Variables and Secrets** > **Add**: add `R2_PUBLIC_BASE_URL` and any optional variables as plain-text variables.
+- **Runtime** > **Compatibility date**: `2026-10-23` or later.
+
+Production and Preview deployments have separate settings. Fill in both if you use preview deployments, or Preview will get the generic error page. Changes to bindings and variables take effect on the next deployment, so redeploy after editing them.
+
+The committed `wrangler.toml` deliberately has no `pages_build_output_dir` key, so Pages ignores it and the dashboard stays editable ([docs](https://developers.cloudflare.com/pages/functions/wrangler-configuration/#projects-with-existing-wrangler-file)). Don't add that key: once it's there, the file becomes the project's source of truth and its local placeholder values would be deployed ([docs](https://developers.cloudflare.com/pages/functions/wrangler-configuration/#source-of-truth)).
+
+### Local settings
+
+`wrangler pages dev` reads the binding and `[vars]` from `wrangler.toml`. Leave its placeholder values as they are. Put local overrides in a `.dev.vars` file next to it (git-ignored), for example `ENABLE_ZIP_DOWNLOAD="true"`, or pass them as `--binding KEY=VALUE`.
 
 Changes to R2 objects and to the rules file **do not** need a deployment. The next request sees them.
 
@@ -115,19 +127,20 @@ npx wrangler r2 object put <bucket-name>/.r2-share-rules --file ./r2-share-rules
 
 ## Deploy
 
-Before the first deploy, edit [`wrangler.toml`](wrangler.toml): `name` (the Pages project name), `bucket_name`, `R2_PUBLIC_BASE_URL`, and the optional variables. Commit the file if you use Git integration.
+You don't need to edit any file in this repository. The project name, the bucket and the variables are all set in the Cloudflare dashboard.
 
 The build (`npm run build`, i.e. `scripts/build-fonts.mjs`) downloads the pinned Jim Mono TC web font release from GitHub, checks its SHA-256 (a mismatch fails the build), and writes `public/fonts/` together with Chakra Petch from `@fontsource/chakra-petch`. `public/fonts/` is generated and git-ignored. The Pages Functions in `functions/` are bundled by Pages itself.
 
 ### Option A: Git integration
 
-1. Push this repository to GitHub or GitLab.
+1. Push this repository (or your fork) to GitHub or GitLab.
 2. In the dashboard, go to **Workers & Pages** > **Create application** > **Pages** > **Connect to Git**, then pick the repository.
 3. Build settings: framework preset *None*, **build command** `npm run build`, **build output directory** `public`.
 4. Add the build environment variable `NODE_VERSION` = `22` (any version ≥ 22.12.0). The current build image already defaults to Node 22, but it does not read `engines` from `package.json`, so pinning the version keeps the build reproducible.
-5. Save and deploy. Pages installs the dependencies, runs the build and deploys `public/` with the Functions. The R2 binding and variables come from `wrangler.toml`.
+5. Save and deploy. This first deployment has no bucket yet, so its share pages show the generic error page.
+6. Fill in the [dashboard settings](#dashboard-settings), then go to **Deployments** and retry the latest deployment (or push a commit) so they take effect.
 
-Each push to the production branch redeploys. Other branches get preview deployments with the same configuration unless you add `[env.preview]` overrides.
+Each push to the production branch redeploys. Other branches get preview deployments that use the Preview settings.
 
 ### Option B: Direct upload with Wrangler
 
@@ -135,11 +148,16 @@ Each push to the production branch redeploys. Other branches get preview deploym
 npm ci
 npm run build
 npx wrangler login
-npx wrangler pages project create <project-name> --production-branch master   # first time only; same name as in wrangler.toml
-npx wrangler pages deploy
+npx wrangler pages project create <project-name> --production-branch master   # first time only
 ```
 
-`wrangler pages deploy` with no directory uses `pages_build_output_dir` (`public`) from `wrangler.toml`. Add `--branch <name>` to deploy a preview. Note that Cloudflare doesn't let a project switch between Git integration and direct upload later.
+Fill in the [dashboard settings](#dashboard-settings) for the new project, then deploy:
+
+```sh
+npx wrangler pages deploy public --project-name <project-name>
+```
+
+Wrangler prints a warning that `wrangler.toml` has no `pages_build_output_dir` and is used for local development only. That is expected. Add `--branch <name>` to deploy a preview. Note that Cloudflare doesn't let a project switch between Git integration and direct upload later.
 
 ### After the first deploy
 
@@ -187,7 +205,7 @@ The Workers Free plan allows **10 ms of CPU time per request**, 128 MB of memory
 1. **Share page.** Open `https://<your-site>/share/<an allowed dir>/`. Check the tree, sizes, README, and that a file link opens on your R2 public URL.
 2. **404.** Open an unlisted folder, a subfolder of an exact rule, and an excluded folder. All three should show the same "Share not found" page.
 3. **Live updates.** Upload a file and edit the rules file, then reload. The changes show up without a redeploy.
-4. **ZIP off/on.** With `ENABLE_ZIP_DOWNLOAD = "false"` there is no "Download all" button and `/api/share-zip?dir=…` returns `404`. Set it to `"true"`, deploy, and check that the button appears and the archive passes `unzip -t`.
+4. **ZIP off/on.** With `ENABLE_ZIP_DOWNLOAD = "false"` there is no "Download all" button and `/api/share-zip?dir=…` returns `404`. Set it to `"true"` in the dashboard, redeploy, and check that the button appears and the archive passes `unzip -t`.
 5. **CPU test with real files (required if ZIP is on, spec §7.1).** Make a test share with files of increasing size (for example 1 MB, 5 MB, 20 MB) and download each share's ZIP while you watch the logs:
 
    ```sh

@@ -1,4 +1,4 @@
-/** Bindings and variables available to Pages Functions (see wrangler.toml). */
+/** Bindings and variables available to Pages Functions (dashboard in production, wrangler.toml locally). */
 export interface Env {
   BUCKET: R2Bucket;
   R2_PUBLIC_BASE_URL?: string;
