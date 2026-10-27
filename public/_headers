@@ -1,0 +1,10 @@
+# Applies to static assets only; responses from Pages Functions (/share/*)
+# set their own headers in src/share-handler.ts. Pages already sends
+# `X-Content-Type-Options: nosniff` and a referrer policy on static assets.
+#
+# Font files are pinned by version and SHA-256 in scripts/build-fonts.mjs and
+# rarely change, so browsers may reuse them for a day instead of revalidating
+# on every page view. /assets/theme.css keeps the default revalidation so a
+# new deploy takes effect immediately.
+/fonts/*
+  Cache-Control: public, max-age=86400

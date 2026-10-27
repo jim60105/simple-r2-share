@@ -34,8 +34,17 @@ export function loadConfig(env: ConfigVars): AppConfig {
     publicBaseUrl: parsePublicBaseUrl(env.R2_PUBLIC_BASE_URL),
     zipEnabled: env.ENABLE_ZIP_DOWNLOAD === "true",
     shareRulesKey: env.SHARE_RULES_KEY || DEFAULT_SHARE_RULES_KEY,
-    footerHtml: env.FOOTER_HTML || null,
+    footerHtml: footerHtmlFromEnv(env),
   };
+}
+
+/**
+ * The footer setting on its own (unset or empty means no footer). Routes use it
+ * to keep the footer on the generic error page when `loadConfig` throws
+ * `ConfigError` because of another setting.
+ */
+export function footerHtmlFromEnv(env: Pick<ConfigVars, "FOOTER_HTML">): string | null {
+  return env.FOOTER_HTML || null;
 }
 
 function parsePublicBaseUrl(raw: string | undefined): string {

@@ -83,7 +83,7 @@ export const EMPTY_TEXT = "No files in this share yet.";
 
 /**
  * Where the footer comes from. Normally the loaded `AppConfig`; when the config
- * itself failed to load (`ConfigError`), pass `{ footerHtml: env.FOOTER_HTML || null }`
+ * itself failed to load (`ConfigError`), pass `{ footerHtml: footerHtmlFromEnv(env) }`
  * to keep the footer, or `null` to render without one.
  */
 export type FooterSource = Pick<AppConfig, "footerHtml"> | null;

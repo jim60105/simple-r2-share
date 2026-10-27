@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConfigError, DEFAULT_SHARE_RULES_KEY, loadConfig } from "../src/config";
+import { ConfigError, DEFAULT_SHARE_RULES_KEY, footerHtmlFromEnv, loadConfig } from "../src/config";
 
 const BASE = { R2_PUBLIC_BASE_URL: "https://files.example.com" };
 
@@ -49,6 +49,14 @@ describe("loadConfig", () => {
     it("is kept verbatim when set", () => {
       const html = '© 2026 <a href="https://example.com/">Example</a> & friends';
       expect(loadConfig({ ...BASE, FOOTER_HTML: html }).footerHtml).toBe(html);
+    });
+
+    it("is available without a valid configuration, for the error page", () => {
+      const html = '<a href="https://example.com/">Example</a>';
+      expect(() => loadConfig({ FOOTER_HTML: html })).toThrow(ConfigError);
+      expect(footerHtmlFromEnv({ FOOTER_HTML: html })).toBe(html);
+      expect(footerHtmlFromEnv({ FOOTER_HTML: "" })).toBeNull();
+      expect(footerHtmlFromEnv({})).toBeNull();
     });
   });
 
