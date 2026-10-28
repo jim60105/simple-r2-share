@@ -24,6 +24,8 @@
  *       span.brand                    a.brand[href] when BRAND_URL is set
  *         svg.icon.brand__glyph       logo glyph (--accent, 22px)
  *         span.brand__name            BRAND_NAME, default "SIMPLE R2 SHARE"
+ *           span.brand__cjk           each run of CJK characters, nudged down
+ *                                     to center on the glyph like Latin caps
  *       p.sync                        "SYNCED <time>YYYY-MM-DD HH:mm UTC</time>"
  *         span.sync__dot              --ok status light (aria-hidden, empty)
  *         time.sync__time[datetime]
@@ -138,6 +140,25 @@ const CARET_ICON = icon("caret", "row__caret");
 const FOLDER_ICON = icon("folder", "row__icon");
 const FILE_ICON = icon("file", "row__icon");
 
+// Han, kana, Hangul, Bopomofo, CJK punctuation and full-width forms: the
+// characters that come from Jim Mono TC's CJK design rather than Chakra Petch.
+const CJK_RUN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Bopomofo}\u3000-\u303F\uFF00-\uFFEF]+/gu;
+
+/**
+ * The escaped brand name with every CJK run in `span.brand__cjk`. CJK glyphs
+ * share the Latin baseline but sit higher than capitals, so CSS moves only
+ * those runs to line up with the logo glyph.
+ */
+function brandNameHtml(name: string): string {
+  let html = "";
+  let last = 0;
+  for (const match of name.matchAll(CJK_RUN)) {
+    html += `${escapeHtml(name.slice(last, match.index))}<span class="brand__cjk">${escapeHtml(match[0])}</span>`;
+    last = match.index + match[0].length;
+  }
+  return html + escapeHtml(name.slice(last));
+}
+
 /** Shared document start: head, sprite and top bar. */
 function pushPageStart(out: string[], title: string, chrome: ChromeSource, now: Date): void {
   const { brandName, brandUrl } = chrome ?? DEFAULT_CHROME;
@@ -154,7 +175,7 @@ function pushPageStart(out: string[], title: string, chrome: ChromeSource, now: 
     SPRITE,
     `<header class="topbar"><${brandTag} class="brand"${brandHref}>`,
     icon("logo", "brand__glyph"),
-    `<span class="brand__name">${escapeHtml(brandName)}</span></${brandTag}>`,
+    `<span class="brand__name">${brandNameHtml(brandName)}</span></${brandTag}>`,
     '<p class="sync"><span class="sync__dot" aria-hidden="true"></span>SYNCED ',
     `<time class="sync__time" datetime="${escapeHtml(now.toISOString())}">${escapeHtml(formatSyncedTime(now))}</time></p>`,
     "</header>",

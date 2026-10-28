@@ -159,6 +159,15 @@ describe("document shell", () => {
     }
   });
 
+  it("wraps each CJK run of the brand name so CSS can align it with the logo", () => {
+    const html = page({ config: config({ brandName: "Jim <的> 備忘手札、メモ v2" }) });
+    expect(html).toContain(
+      '<span class="brand__name">Jim &lt;<span class="brand__cjk">的</span>&gt; <span class="brand__cjk">備忘手札、メモ</span> v2</span>',
+    );
+    expect(titleOf(html)).toBe("project-a · Jim &lt;的&gt; 備忘手札、メモ v2");
+    expect(page()).not.toContain("brand__cjk");
+  });
+
   it("links the brand to BRAND_URL, escaped, on every page", () => {
     const custom = chrome({ brandUrl: "https://example.com/?a=1&b=2" });
     for (const html of [page({ config: config(custom) }), renderNotFoundPage(custom, NOW), renderErrorPage(custom, NOW)]) {

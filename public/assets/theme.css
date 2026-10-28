@@ -189,6 +189,17 @@ svg.sprite {
   white-space: nowrap;
 }
 
+/*
+ * Jim Mono TC's CJK glyphs sit about 0.03em higher on the shared baseline than
+ * Chakra Petch capitals, which center on the logo glyph; move them down to
+ * match. Browsers paint text on whole pixels, so 0.05em (1px at --text-lg)
+ * lands closest. Relative positioning leaves the line box alone.
+ */
+.brand__cjk {
+  position: relative;
+  top: 0.05em;
+}
+
 /* BRAND_URL turns the brand into a link; it keeps the plain brand look. */
 a.brand {
   color: inherit;
