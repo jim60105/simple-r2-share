@@ -31,7 +31,7 @@
 
 XOR 對任意位元組序列可逆，標準 Base58 編碼可無損還原位元組，且同一個合法路徑產生固定 token。長度參與種子初始化，減少相同路徑前綴導致的固定遮罩規律。**固定種子完全公開，混淆僅改變外觀，不提供保密性、驗證或授權能力。** 取回路徑後，每次均重新執行 `isShareRoot()`，並以原有規則限制分享內容。
 
-不使用壓縮、密鑰、雜湊碰撞處理、資料庫查詢或 `BigInt` 型別的逐字元大數運算。優先採用可在 Workers 執行、以位元組陣列做進位轉換的標準 Base58 函式庫，避免自製數字編碼與不必要的套件。Base58 的一般進位轉換在長輸入上可能接近二次時間，因此先對輸入 token 長度做嚴格上限檢查，再執行解碼。編解碼僅接受 R2 物件鍵允許範圍內的 UTF-8 路徑，最大 1024 位元組；錯誤編碼、無效 UTF-8、空路徑、異常斜線和路徑跳脫一律拒絕。
+不使用壓縮、密鑰、雜湊碰撞處理、資料庫查詢或 `BigInt` 型別的逐字元大數運算。優先採用可在 Workers 執行、以位元組陣列做進位轉換的標準 Base58 函式庫，避免自製數字編碼與不必要的套件。Base58 的一般進位轉換在長輸入上可能接近二次時間，因此先將 token 限制為最多 1400 個 Base58 字元，再執行解碼。解碼後的路徑 UTF-8 長度最多 1024 位元組，與 R2 物件鍵上限一致；錯誤編碼、無效 UTF-8、空路徑、異常斜線和路徑跳脫一律拒絕。
 
 使用 Base58 的網址通常約為 UTF-8 位元組數的 1.37 倍字元長度，短或高熵路徑不保證縮短。中文目錄以 UTF-8 位元組計算，可能產生更長的 token。此規格以「短網址外觀不透露可讀路徑」為優先目標，仍可直接由演算法無狀態還原；部署前以實際資料夾名稱及最大長度進行驗收。
 
@@ -75,3 +75,5 @@ Workers Free 每次 HTTP 請求的 CPU 上限為 **10 ms**；等待 R2 回應的
 - [Cloudflare Pages Access 外掛](https://developers.cloudflare.com/pages/functions/plugins/cloudflare-access/)
 - [Cloudflare Workers API Compression Streams](https://developers.cloudflare.com/workers/runtime-apis/web-standards/)
 - [Cloudflare R2 Workers API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)
+- [Cloudflare Workers CPU limits](https://developers.cloudflare.com/workers/platform/limits/)
+- [Cloudflare R2 object key limits](https://developers.cloudflare.com/r2/platform/limits/)
