@@ -27,16 +27,16 @@ afterEach(() => {
 
 function seededBucket(rules: string | null = RULES): FakeBucket {
   const bucket = new FakeBucket();
-  if (rules !== null) bucket.put(".r2-share-rules", rules);
+  if (rules !== null) bucket.add(".r2-share-rules", rules);
   bucket
-    .put("releases/project-a/README.md", "# Project A\n\n![shot](img/shot.png)\n", new Date("2026-10-20T00:00:00Z"))
-    .put("releases/project-a/img/shot.png", "png")
-    .put("releases/project-a/app-v1.zip", "zip-bytes")
-    .put("releases/project-a/sub/notes.txt", "notes")
-    .put("releases/project-b/one.txt", "1")
-    .put("releases/project-b/child/two.txt", "2")
-    .put("releases/project-b/private/secret.txt", "s")
-    .put("releases/project-a2/other.txt", "x");
+    .add("releases/project-a/README.md", "# Project A\n\n![shot](img/shot.png)\n", new Date("2026-10-20T00:00:00Z"))
+    .add("releases/project-a/img/shot.png", "png")
+    .add("releases/project-a/app-v1.zip", "zip-bytes")
+    .add("releases/project-a/sub/notes.txt", "notes")
+    .add("releases/project-b/one.txt", "1")
+    .add("releases/project-b/child/two.txt", "2")
+    .add("releases/project-b/private/secret.txt", "s")
+    .add("releases/project-a2/other.txt", "x");
   return bucket;
 }
 
@@ -111,20 +111,20 @@ describe("authorised share", () => {
   });
 
   it("handles Unicode directory names", async () => {
-    const bucket = new FakeBucket().put(".r2-share-rules", "專案/\n").put("專案/說明.txt", "x");
+    const bucket = new FakeBucket().add(".r2-share-rules", "專案/\n").add("專案/說明.txt", "x");
     const { response, body } = await get(bucket, share("專案"));
     expect(response.status).toBe(200);
     expect(body).toContain("說明.txt");
   });
 
   it("uses the configured rules key", async () => {
-    const bucket = new FakeBucket().put("config/rules", "docs/\n").put("docs/a.txt", "a");
+    const bucket = new FakeBucket().add("config/rules", "docs/\n").add("docs/a.txt", "a");
     const { response } = await get(bucket, share("docs"), { SHARE_RULES_KEY: "config/rules" });
     expect(response.status).toBe(200);
   });
 
   it("skips and logs a README over the size limit", async () => {
-    const bucket = seededBucket().put("releases/project-a/README.md", "x".repeat(MAX_README_BYTES + 1));
+    const bucket = seededBucket().add("releases/project-a/README.md", "x".repeat(MAX_README_BYTES + 1));
     const { response, body } = await get(bucket, share("releases", "project-a"));
     expect(response.status).toBe(200);
     expect(body).not.toContain("panel--readme");

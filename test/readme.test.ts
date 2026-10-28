@@ -30,7 +30,7 @@ const DEFAULT_RULES = rules("releases/project-a/", "!releases/project-a/private/
 function bucket(files: Record<string, string>): FakeBucket {
   const fake = new FakeBucket();
   for (const [path, body] of Object.entries(files)) {
-    fake.put(path.startsWith("/") ? path.slice(1) : PREFIX + path, body);
+    fake.add(path.startsWith("/") ? path.slice(1) : PREFIX + path, body);
   }
   return fake;
 }
@@ -159,14 +159,14 @@ describe("loadReadme", () => {
 
   it("skips a README that grew too large after the listing", async () => {
     const { fake, context } = await setup({ "README.md": "small" });
-    fake.put(`${PREFIX}README.md`, "a".repeat(MAX_README_BYTES + 1));
+    fake.add(`${PREFIX}README.md`, "a".repeat(MAX_README_BYTES + 1));
     expect(await loadReadme(fake.asR2Bucket(), context)).toBeNull();
     expect(fake.getCalls).toEqual([`${PREFIX}README.md`]);
   });
 
   it("replaces invalid UTF-8 and drops a BOM", async () => {
     const { fake, context } = await setup({ "README.md": "" });
-    fake.put(`${PREFIX}README.md`, new Uint8Array([0xef, 0xbb, 0xbf, 0x41, 0xff, 0x42]));
+    fake.add(`${PREFIX}README.md`, new Uint8Array([0xef, 0xbb, 0xbf, 0x41, 0xff, 0x42]));
     expect((await loadReadme(fake.asR2Bucket(), context))?.html).toBe("<p>A\uFFFDB</p>\n");
   });
 

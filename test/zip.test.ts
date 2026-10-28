@@ -44,15 +44,15 @@ const PROJECT_A: Record<string, string> = {
 
 function seededBucket(rules: string | null = `${RULES}\n!releases/project-a/private/\n!releases/project-a/*.tmp`) {
   const bucket = new FakeBucket();
-  if (rules !== null) bucket.put(RULES_KEY, rules);
+  if (rules !== null) bucket.add(RULES_KEY, rules);
   for (const [path, body] of Object.entries(PROJECT_A)) {
-    bucket.put(`releases/project-a/${path}`, body, new Date("2026-10-20T12:34:56Z"));
+    bucket.add(`releases/project-a/${path}`, body, new Date("2026-10-20T12:34:56Z"));
   }
   bucket
-    .put("releases/project-a/", "") // directory marker
-    .put("releases/project-a2/other.txt", "x")
-    .put("releases/project-b/one.txt", "1")
-    .put("releases/project-b/private/secret.txt", "s");
+    .add("releases/project-a/", "") // directory marker
+    .add("releases/project-a2/other.txt", "x")
+    .add("releases/project-b/one.txt", "1")
+    .add("releases/project-b/private/secret.txt", "s");
   return bucket;
 }
 
@@ -239,16 +239,16 @@ describe("404", () => {
   });
 
   it("answers an authorised share without files with 404", async () => {
-    const bucket = seededBucket().put("empty/", "");
+    const bucket = seededBucket().add("empty/", "");
     const response = await fetchZip(bucket, zipQuery("empty"));
     expect(response.status).toBe(404);
     expect(objectGets(bucket)).toEqual([]);
   });
 
   it("answers an authorised share whose files are all excluded with 404", async () => {
-    const bucket = seededBucket().put("releases/project-b/private/only.txt", "x");
-    bucket.put(RULES_KEY, "releases/project-b/private2/\n!releases/project-b/private2/x\n");
-    bucket.put("releases/project-b/private2/x", "x");
+    const bucket = seededBucket().add("releases/project-b/private/only.txt", "x");
+    bucket.add(RULES_KEY, "releases/project-b/private2/\n!releases/project-b/private2/x\n");
+    bucket.add("releases/project-b/private2/x", "x");
     const response = await fetchZip(bucket, zipQuery("releases/project-b/private2"));
     expect(response.status).toBe(404);
   });
@@ -301,7 +301,7 @@ describe("successful download", () => {
   });
 
   it("serves descendants of a `/**` rule without excluded folders", async () => {
-    const bucket = seededBucket().put("releases/project-b/child/two.txt", "2");
+    const bucket = seededBucket().add("releases/project-b/child/two.txt", "2");
     const response = await fetchZip(bucket, zipQuery("releases/project-b"));
     const entries = parseZip(await readAll(response.body as ReadableStream<Uint8Array>));
     expect(entries.map((entry) => entry.name)).toEqual(["child/two.txt", "one.txt"]);
@@ -311,23 +311,23 @@ describe("successful download", () => {
 
   it("never includes the rules object, even when it lies inside the share", async () => {
     const bucket = new FakeBucket()
-      .put("share/.rules", "share/\n")
-      .put("share/a.txt", "a")
-      .put("share/README", "readme");
+      .add("share/.rules", "share/\n")
+      .add("share/a.txt", "a")
+      .add("share/README", "readme");
     const response = await fetchZip(bucket, zipQuery("share"), { ...ZIP_ON, SHARE_RULES_KEY: "share/.rules" });
     const entries = parseZip(await readAll(response.body as ReadableStream<Uint8Array>));
     expect(entries.map((entry) => entry.name)).toEqual(["a.txt", "README"]);
   });
 
   it("keeps both a file `a` and a folder `a/`", async () => {
-    const bucket = new FakeBucket().put(RULES_KEY, "s/\n").put("s/a", "file").put("s/a/b", "nested");
+    const bucket = new FakeBucket().add(RULES_KEY, "s/\n").add("s/a", "file").add("s/a/b", "nested");
     const response = await fetchZip(bucket, zipQuery("s"));
     const entries = parseZip(await readAll(response.body as ReadableStream<Uint8Array>));
     expect(entries.map((entry) => entry.name)).toEqual(["a/b", "a"]);
   });
 
   it("works for a Unicode share root", async () => {
-    const bucket = new FakeBucket().put(RULES_KEY, "發布/專案/\n").put("發布/專案/說明.txt", "內容");
+    const bucket = new FakeBucket().add(RULES_KEY, "發布/專案/\n").add("發布/專案/說明.txt", "內容");
     const response = await fetchZip(bucket, zipQuery("發布/專案"));
     expect(response.status).toBe(200);
     const entries = parseZip(await readAll(response.body as ReadableStream<Uint8Array>));
@@ -348,7 +348,7 @@ describe("successful download", () => {
   });
 
   it("encodes a Chinese last segment in Content-Disposition", async () => {
-    const bucket = new FakeBucket().put(RULES_KEY, "發布/專案 A/\n").put("發布/專案 A/x.txt", "x");
+    const bucket = new FakeBucket().add(RULES_KEY, "發布/專案 A/\n").add("發布/專案 A/x.txt", "x");
     const response = await fetchZip(bucket, zipQuery("發布/專案 A"));
     expect(response.headers.get("Content-Disposition")).toBe(
       "attachment; filename=\"__ A.zip\"; filename*=UTF-8''%E5%B0%88%E6%A1%88%20A.zip",
@@ -357,7 +357,7 @@ describe("successful download", () => {
   });
 
   it("escapes a quote in Content-Disposition", async () => {
-    const bucket = new FakeBucket().put(RULES_KEY, 'say "hi"/\n').put('say "hi"/x.txt', "x");
+    const bucket = new FakeBucket().add(RULES_KEY, 'say "hi"/\n').add('say "hi"/x.txt', "x");
     const response = await fetchZip(bucket, zipQuery('say "hi"'));
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Disposition")).toBe(
@@ -367,8 +367,8 @@ describe("successful download", () => {
   });
 
   it("fetches objects lazily as the stream is read", async () => {
-    const bucket = new FakeBucket().put(RULES_KEY, "many/\n");
-    for (let i = 0; i < 20; i++) bucket.put(`many/file-${String(i).padStart(2, "0")}.txt`, `content ${i}`);
+    const bucket = new FakeBucket().add(RULES_KEY, "many/\n");
+    for (let i = 0; i < 20; i++) bucket.add(`many/file-${String(i).padStart(2, "0")}.txt`, `content ${i}`);
     const response = await fetchZip(bucket, zipQuery("many"));
     const reader = (response.body as ReadableStream<Uint8Array>).getReader();
     const first = await reader.read();
@@ -444,9 +444,9 @@ describe("errors before streaming", () => {
 
   it("refuses a share that would exceed the subrequest budget, before reading any object", async () => {
     // 1 rules get + 1 list page + files.
-    const bucket = new FakeBucket().put(RULES_KEY, "big/\n");
+    const bucket = new FakeBucket().add(RULES_KEY, "big/\n");
     const fileCount = ZIP_SUBREQUEST_BUDGET - 1;
-    for (let i = 0; i < fileCount; i++) bucket.put(`big/${i}.txt`, "x");
+    for (let i = 0; i < fileCount; i++) bucket.add(`big/${i}.txt`, "x");
     const response = await fetchZip(bucket, zipQuery("big"));
     expect(response.status).toBe(500);
     expect(await response.text()).toContain(ERROR_TITLE);
@@ -456,8 +456,8 @@ describe("errors before streaming", () => {
   });
 
   it("counts every list page against the budget", async () => {
-    const bucket = new FakeBucket().put(RULES_KEY, "big/\n");
-    for (let i = 0; i < 850; i++) bucket.put(`big/${String(i).padStart(3, "0")}.txt`, "x");
+    const bucket = new FakeBucket().add(RULES_KEY, "big/\n");
+    for (let i = 0; i < 850; i++) bucket.add(`big/${String(i).padStart(3, "0")}.txt`, "x");
     // 1 rules get + 1 list page + 850 gets = 852: fine.
     const ok = await fetchZip(bucket, zipQuery("big"));
     expect(ok.status).toBe(200);
@@ -470,8 +470,8 @@ describe("errors before streaming", () => {
   });
 
   it("allows a share exactly at the budget", async () => {
-    const bucket = new FakeBucket().put(RULES_KEY, "big/\n");
-    for (let i = 0; i < ZIP_SUBREQUEST_BUDGET - 2; i++) bucket.put(`big/${i}.txt`, "x");
+    const bucket = new FakeBucket().add(RULES_KEY, "big/\n");
+    for (let i = 0; i < ZIP_SUBREQUEST_BUDGET - 2; i++) bucket.add(`big/${i}.txt`, "x");
     const response = await fetchZip(bucket, zipQuery("big"));
     expect(response.status).toBe(200);
     await response.body?.cancel();

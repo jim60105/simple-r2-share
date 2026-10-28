@@ -27,7 +27,7 @@ const ALLOW_A = rules("releases/project-a/");
 
 function bucket(keys: Record<string, string>, pageSize = 2): FakeBucket {
   const fake = new FakeBucket({ pageSize });
-  for (const [key, body] of Object.entries(keys)) fake.put(key, body);
+  for (const [key, body] of Object.entries(keys)) fake.add(key, body);
   return fake;
 }
 
@@ -353,7 +353,7 @@ describe("loadListing", () => {
 
   it("passes uploaded dates through", async () => {
     const uploaded = new Date("2026-10-27T08:05:00Z");
-    const fake = new FakeBucket().put(`${PREFIX}a.txt`, "abc", uploaded);
+    const fake = new FakeBucket().add(`${PREFIX}a.txt`, "abc", uploaded);
     const listing = await loadListing(fake.asR2Bucket(), PREFIX, ALLOW_A);
     expect(listing.byPath.get("a.txt")).toMatchObject({ size: 3, uploaded });
   });
