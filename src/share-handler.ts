@@ -5,7 +5,7 @@
  *
  * Flow for `GET` / `HEAD /share/<dir>/`:
  * 1. Load the deployment settings. `ConfigError` -> generic error page `500`
- *    (the footer still renders from `FOOTER_HTML`).
+ *    (the brand and footer still render from `BRAND_*` and `FOOTER_HTML`).
  * 2. Validate the path with `parseSharePath`. Invalid -> `404`, before any R2
  *    call. A valid directory path that only lacks the trailing `/` gets a
  *    `308` to the canonical URL; this happens before the rules are read, so
@@ -23,7 +23,7 @@
  * endpoint (`src/zip-handler.ts`), so both routes answer `404`, `405` and
  * `500` with the same bytes and authorise share roots the same way.
  */
-import { footerHtmlFromEnv, loadConfig, type AppConfig, type Env } from "./config";
+import { loadConfig, pageChromeFromEnv, type AppConfig, type Env } from "./config";
 import { renderErrorPage, renderNotFoundPage, renderSharePage } from "./html";
 import { loadListing } from "./listing";
 import { parseSharePath, sharePagePath, toPrefix } from "./paths";
@@ -100,11 +100,10 @@ export function notFoundResponse(config: AppConfig, now: Date, head: boolean): R
 
 /**
  * The generic error page `500`. `config` is `null` when the configuration
- * could not be loaded; the footer then comes from `FOOTER_HTML` alone.
+ * could not be loaded; the brand and footer then come from their variables alone.
  */
 export function errorResponse(env: Env, config: AppConfig | null, now: Date, head: boolean): Response {
-  const footer = { footerHtml: config?.footerHtml ?? footerHtmlFromEnv(env) };
-  return htmlResponse(500, renderErrorPage(footer, now), config, head);
+  return htmlResponse(500, renderErrorPage(config ?? pageChromeFromEnv(env), now), config, head);
 }
 
 /**

@@ -2,13 +2,15 @@
  * Server-rendered pages (spec §9 `html`; UI spec §5, §7, §10, §11): the share
  * page, the `404` page and the generic error page. Pure string building, one
  * pass, joined once; the pages contain no `<script>` and load nothing from
- * external domains (the only absolute URLs are R2 public object URLs and links
- * inside the trusted footer / rendered README).
+ * external domains (the only absolute URLs are R2 public object URLs, the
+ * trusted brand link, links inside the trusted footer / rendered README and
+ * the "Powered by" credit).
  *
  * Escaping: every dynamic text and attribute value goes through `escapeHtml`.
  * The only raw insertions are this module's static markup, `Readme.html`
  * (already safe, see `readme.ts`) and `AppConfig.footerHtml` (trusted admin
  * deployment setting, UI spec §5.5; it must never come from R2 or a request).
+ * `brandName` and `brandUrl` are trusted too, but still escaped as text.
  *
  * Markup / class contract for `public/assets/theme.css` (Task 7):
  *
@@ -19,9 +21,9 @@
  *                                     Symbols: #i-logo #i-folder #i-file
  *                                     #i-caret #i-download (stroke=currentColor)
  *     header.topbar                   top bar, wraps on narrow screens
- *       span.brand                    not a link
+ *       span.brand                    a.brand[href] when BRAND_URL is set
  *         svg.icon.brand__glyph       logo glyph (--accent, 22px)
- *         span.brand__name            "SIMPLE R2 SHARE"
+ *         span.brand__name            BRAND_NAME, default "SIMPLE R2 SHARE"
  *       p.sync                        "SYNCED <time>YYYY-MM-DD HH:mm UTC</time>"
  *         span.sync__dot              --ok status light (aria-hidden, empty)
  *         time.sync__time[datetime]
@@ -65,15 +67,18 @@
  *         div.status__code.status__code--error   "ERROR" (--danger, aria-hidden)
  *         h1.status__title            "Share not found" / "Something went wrong"
  *         p.status__text
- *     footer.footer                   raw FOOTER_HTML, only when set
+ *     footer.footer                   raw FOOTER_HTML (when set), then
+ *                                     "• Powered by <a>Simple R2 Share</a>";
+ *                                     the bullet only follows FOOTER_HTML
  */
-import type { AppConfig } from "./config";
+import { DEFAULT_BRAND_NAME, type AppConfig, type PageChrome } from "./config";
 import { bytesQuantity, fileCountQuantity, folderCountQuantity, formatBytes, formatItemCount, formatSyncedTime, type Quantity } from "./format";
 import type { Listing, TreeNode } from "./listing";
 import { publicUrl, zipDownloadPath } from "./paths";
 import type { Readme } from "./readme";
 
-export const SITE_NAME = "SIMPLE R2 SHARE";
+export const PROJECT_NAME = "Simple R2 Share";
+export const PROJECT_URL = "https://github.com/jim60105/simple-r2-share";
 
 export const NOT_FOUND_TITLE = "Share not found";
 export const NOT_FOUND_TEXT = "This link doesn't point to an active share. Check the address or ask the person who sent it.";
@@ -82,18 +87,20 @@ export const ERROR_TEXT = "This share couldn't be loaded right now. Try again in
 export const EMPTY_TEXT = "No files in this share yet.";
 
 /**
- * Where the footer comes from. Normally the loaded `AppConfig`; when the config
- * itself failed to load (`ConfigError`), pass `{ footerHtml: footerHtmlFromEnv(env) }`
- * to keep the footer, or `null` to render without one.
+ * Where the brand and footer come from. Normally the loaded `AppConfig`; when
+ * the config itself failed to load (`ConfigError`), pass `pageChromeFromEnv(env)`
+ * to keep them, or `null` for the default brand and no custom footer.
  */
-export type FooterSource = Pick<AppConfig, "footerHtml"> | null;
+export type ChromeSource = PageChrome | null;
+
+const DEFAULT_CHROME: PageChrome = { footerHtml: null, brandName: DEFAULT_BRAND_NAME, brandUrl: null };
 
 export interface SharePageInput {
   /** Validated share root segments (from `parseSharePath`), never empty. */
   readonly segments: readonly string[];
   readonly listing: Listing;
   readonly readme: Readme | null;
-  readonly config: Pick<AppConfig, "publicBaseUrl" | "zipEnabled" | "footerHtml">;
+  readonly config: Pick<AppConfig, "publicBaseUrl" | "zipEnabled"> & PageChrome;
   /** Render time, shown as `SYNCED …` (the request time). */
   readonly now: Date;
 }
@@ -132,30 +139,37 @@ const FOLDER_ICON = icon("folder", "row__icon");
 const FILE_ICON = icon("file", "row__icon");
 
 /** Shared document start: head, sprite and top bar. */
-function pushPageStart(out: string[], title: string, now: Date): void {
+function pushPageStart(out: string[], title: string, chrome: ChromeSource, now: Date): void {
+  const { brandName, brandUrl } = chrome ?? DEFAULT_CHROME;
+  const brandTag = brandUrl ? "a" : "span";
+  const brandHref = brandUrl ? ` href="${escapeHtml(brandUrl)}"` : "";
   out.push(
     '<!doctype html><html lang="en"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
     '<meta name="color-scheme" content="dark">',
-    `<title>${escapeHtml(title)} · ${SITE_NAME}</title>`,
+    `<title>${escapeHtml(title)} · ${escapeHtml(brandName)}</title>`,
     '<link rel="stylesheet" href="/fonts/JimMonoTC.css"><link rel="stylesheet" href="/assets/theme.css">',
     '<link rel="icon" href="/favicon.svg" type="image/svg+xml">',
     "</head><body>",
     SPRITE,
-    '<header class="topbar"><span class="brand">',
+    `<header class="topbar"><${brandTag} class="brand"${brandHref}>`,
     icon("logo", "brand__glyph"),
-    `<span class="brand__name">${SITE_NAME}</span></span>`,
+    `<span class="brand__name">${escapeHtml(brandName)}</span></${brandTag}>`,
     '<p class="sync"><span class="sync__dot" aria-hidden="true"></span>SYNCED ',
     `<time class="sync__time" datetime="${escapeHtml(now.toISOString())}">${escapeHtml(formatSyncedTime(now))}</time></p>`,
     "</header>",
   );
 }
 
-/** Shared document end: optional raw footer. */
-function pushPageEnd(out: string[], footer: FooterSource): void {
-  const footerHtml = footer?.footerHtml;
-  if (footerHtml) out.push(`<footer class="footer">${footerHtml}</footer>`);
-  out.push("</body></html>");
+const POWERED_BY = `Powered by <a href="${PROJECT_URL}">${PROJECT_NAME}</a>`;
+
+/** Shared document end: the footer with the optional raw FOOTER_HTML and the credit. */
+function pushPageEnd(out: string[], chrome: ChromeSource): void {
+  const footerHtml = chrome?.footerHtml;
+  out.push(
+    `<footer class="footer">${footerHtml ? `${footerHtml} • ` : ""}${POWERED_BY}</footer>`,
+    "</body></html>",
+  );
 }
 
 function stat(quantity: Quantity): string {
@@ -194,7 +208,7 @@ export function renderSharePage(input: SharePageInput): string {
   if (name === undefined) throw new TypeError("html: segments must not be empty");
 
   const out: string[] = [];
-  pushPageStart(out, name, now);
+  pushPageStart(out, name, config, now);
   out.push(
     '<main class="main"><section class="hero">',
     `<h1 class="hero__title">${escapeHtml(name)}</h1>`,
@@ -233,9 +247,9 @@ export function renderSharePage(input: SharePageInput): string {
   return out.join("");
 }
 
-function renderStatusPage(code: "404" | "ERROR", modifier: string, title: string, text: string, footer: FooterSource, now: Date): string {
+function renderStatusPage(code: "404" | "ERROR", modifier: string, title: string, text: string, chrome: ChromeSource, now: Date): string {
   const out: string[] = [];
-  pushPageStart(out, title, now);
+  pushPageStart(out, title, chrome, now);
   out.push(
     '<main class="main"><section class="hero hero--status">',
     `<div class="status__code status__code--${modifier}" aria-hidden="true">${code}</div>`,
@@ -244,7 +258,7 @@ function renderStatusPage(code: "404" | "ERROR", modifier: string, title: string
     `<p class="status__text">${text}</p>`,
     "</section></main>",
   );
-  pushPageEnd(out, footer);
+  pushPageEnd(out, chrome);
   return out.join("");
 }
 
@@ -252,15 +266,15 @@ function renderStatusPage(code: "404" | "ERROR", modifier: string, title: string
  * The `404` page (UI spec §7.2). Identical for every reason (not shared,
  * missing, broken rules), so it takes no details at all.
  */
-export function renderNotFoundPage(footer: FooterSource, now: Date): string {
-  return renderStatusPage("404", "404", NOT_FOUND_TITLE, NOT_FOUND_TEXT, footer, now);
+export function renderNotFoundPage(chrome: ChromeSource, now: Date): string {
+  return renderStatusPage("404", "404", NOT_FOUND_TITLE, NOT_FOUND_TEXT, chrome, now);
 }
 
 /**
  * The generic error page (UI spec §7.2). Takes no error so nothing internal can
- * leak; log details on the server instead. `footer` may be `null` when the
+ * leak; log details on the server instead. `chrome` may be `null` when the
  * configuration itself could not be loaded.
  */
-export function renderErrorPage(footer: FooterSource, now: Date): string {
-  return renderStatusPage("ERROR", "error", ERROR_TITLE, ERROR_TEXT, footer, now);
+export function renderErrorPage(chrome: ChromeSource, now: Date): string {
+  return renderStatusPage("ERROR", "error", ERROR_TITLE, ERROR_TEXT, chrome, now);
 }

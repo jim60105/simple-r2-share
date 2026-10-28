@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConfigError, DEFAULT_SHARE_RULES_KEY, footerHtmlFromEnv, loadConfig } from "../src/config";
+import { ConfigError, DEFAULT_SHARE_RULES_KEY, loadConfig, pageChromeFromEnv } from "../src/config";
 
 const BASE = { R2_PUBLIC_BASE_URL: "https://files.example.com" };
 
@@ -10,6 +10,8 @@ describe("loadConfig", () => {
       zipEnabled: false,
       shareRulesKey: ".r2-share-rules",
       footerHtml: null,
+      brandName: "SIMPLE R2 SHARE",
+      brandUrl: null,
     });
     expect(DEFAULT_SHARE_RULES_KEY).toBe(".r2-share-rules");
   });
@@ -54,10 +56,39 @@ describe("loadConfig", () => {
     it("is available without a valid configuration, for the error page", () => {
       const html = '<a href="https://example.com/">Example</a>';
       expect(() => loadConfig({ FOOTER_HTML: html })).toThrow(ConfigError);
-      expect(footerHtmlFromEnv({ FOOTER_HTML: html })).toBe(html);
-      expect(footerHtmlFromEnv({ FOOTER_HTML: "" })).toBeNull();
-      expect(footerHtmlFromEnv({})).toBeNull();
+      expect(pageChromeFromEnv({ FOOTER_HTML: html }).footerHtml).toBe(html);
+      expect(pageChromeFromEnv({ FOOTER_HTML: "" }).footerHtml).toBeNull();
+      expect(pageChromeFromEnv({}).footerHtml).toBeNull();
     });
+  });
+
+  describe("BRAND_NAME", () => {
+    it("defaults when unset or empty", () => {
+      expect(loadConfig(BASE).brandName).toBe("SIMPLE R2 SHARE");
+      expect(loadConfig({ ...BASE, BRAND_NAME: "" }).brandName).toBe("SIMPLE R2 SHARE");
+    });
+
+    it("is kept verbatim when set", () => {
+      expect(loadConfig({ ...BASE, BRAND_NAME: "Jim's <Files>" }).brandName).toBe("Jim's <Files>");
+    });
+  });
+
+  describe("BRAND_URL", () => {
+    it("is null when unset or empty", () => {
+      expect(loadConfig(BASE).brandUrl).toBeNull();
+      expect(loadConfig({ ...BASE, BRAND_URL: "" }).brandUrl).toBeNull();
+    });
+
+    it("is kept verbatim when set", () => {
+      expect(loadConfig({ ...BASE, BRAND_URL: "https://example.com/?a=1&b=2" }).brandUrl).toBe("https://example.com/?a=1&b=2");
+    });
+  });
+
+  it("keeps the brand and footer without a valid configuration, for the error page", () => {
+    const env = { BRAND_NAME: "Files", BRAND_URL: "/", FOOTER_HTML: "<b>F</b>" };
+    expect(() => loadConfig(env)).toThrow(ConfigError);
+    expect(pageChromeFromEnv(env)).toEqual({ brandName: "Files", brandUrl: "/", footerHtml: "<b>F</b>" });
+    expect(pageChromeFromEnv({})).toEqual({ brandName: "SIMPLE R2 SHARE", brandUrl: null, footerHtml: null });
   });
 
   describe("R2_PUBLIC_BASE_URL", () => {
@@ -70,6 +101,11 @@ describe("loadConfig", () => {
       ["https://cdn.example.com/bucket", "https://cdn.example.com/bucket"],
       ["https://cdn.example.com/bucket/", "https://cdn.example.com/bucket"],
       ["https://pub-0123456789abcdef.r2.dev", "https://pub-0123456789abcdef.r2.dev"],
+      ["files.example.com", "https://files.example.com"],
+      ["files.example.com/", "https://files.example.com"],
+      ["FILES.Example.com", "https://files.example.com"],
+      ["cdn.example.com/bucket/", "https://cdn.example.com/bucket"],
+      ["pub-0123456789abcdef.r2.dev", "https://pub-0123456789abcdef.r2.dev"],
     ])("normalizes %j to %j", (input, expected) => {
       expect(loadConfig({ R2_PUBLIC_BASE_URL: input }).publicBaseUrl).toBe(expected);
     });
@@ -88,11 +124,13 @@ describe("loadConfig", () => {
       ["http", "http://files.example.com"],
       ["uppercase scheme", "HTTPS://files.example.com"],
       ["leading whitespace", " https://files.example.com"],
-      ["protocol-relative", "//files.example.com"],
-      ["no scheme", "files.example.com"],
       ["other scheme", "ftp://files.example.com"],
       ["javascript scheme", "javascript:alert(1)"],
       ["scheme only", "https://"],
+      ["no scheme with leading whitespace", " files.example.com"],
+      ["no scheme with port", "files.example.com:http"],
+      ["no scheme with credentials", "user:pass@files.example.com"],
+      ["no scheme with query", "files.example.com/?a=1"],
       ["invalid host", "https://exa mple.com"],
       ["credentials", "https://user:pass@files.example.com"],
       ["query", "https://files.example.com/?a=1"],

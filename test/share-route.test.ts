@@ -215,7 +215,7 @@ describe("404", () => {
 
   it("keeps the footer on the 404 page", async () => {
     const { body } = await get(seededBucket(), "/share/nothing/", { FOOTER_HTML: "<b>FOOT</b>" });
-    expect(body).toContain('<footer class="footer"><b>FOOT</b></footer>');
+    expect(body).toContain('<footer class="footer"><b>FOOT</b> • Powered by');
   });
 });
 
@@ -285,24 +285,28 @@ describe("500", () => {
     const { response, body } = await get(bucket, "/share/releases/project-a/", {
       R2_PUBLIC_BASE_URL: "http://insecure.example.com",
       FOOTER_HTML: "<b>FOOT</b>",
+      BRAND_NAME: "Jim Files",
+      BRAND_URL: "https://jim.example.com/",
     });
     expect(response.status).toBe(500);
     expectCommonHeaders(response);
     expect(response.headers.get("Content-Security-Policy")).toContain("img-src 'self';");
     expect(body).toContain(ERROR_TITLE);
-    expect(body).toContain('<footer class="footer"><b>FOOT</b></footer>');
+    expect(body).toContain('<footer class="footer"><b>FOOT</b> • Powered by');
+    expect(body).toContain('<a class="brand" href="https://jim.example.com/">');
+    expect(body).toContain('<span class="brand__name">Jim Files</span>');
     expect(body).not.toContain("insecure.example.com");
     expect(bucket.getCalls).toEqual([]);
     expect(errorSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("omits the footer on a configuration error when FOOTER_HTML is empty", async () => {
+  it("shows only the credit on a configuration error when FOOTER_HTML is empty", async () => {
     const { response, body } = await get(seededBucket(), "/share/releases/project-a/", {
       R2_PUBLIC_BASE_URL: undefined,
       FOOTER_HTML: "",
     });
     expect(response.status).toBe(500);
-    expect(body).not.toContain("<footer");
+    expect(body).toContain('<footer class="footer">Powered by');
   });
 });
 

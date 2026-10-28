@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { AppConfig } from "../src/config";
+import type { AppConfig, PageChrome } from "../src/config";
 import {
   EMPTY_TEXT,
   ERROR_TEXT,
   NOT_FOUND_TEXT,
+  PROJECT_URL,
   escapeHtml,
   renderErrorPage,
   renderNotFoundPage,
@@ -34,7 +35,15 @@ function listing(files: Record<string, number>, prefix = PREFIX, shareRules = AL
 }
 
 function config(overrides: Partial<AppConfig> = {}): AppConfig {
-  return { publicBaseUrl: BASE, zipEnabled: false, shareRulesKey: RULES_KEY, footerHtml: null, ...overrides };
+  return {
+    publicBaseUrl: BASE,
+    zipEnabled: false,
+    shareRulesKey: RULES_KEY,
+    footerHtml: null,
+    brandName: "SIMPLE R2 SHARE",
+    brandUrl: null,
+    ...overrides,
+  };
 }
 
 function page(overrides: Partial<SharePageInput> = {}): string {
@@ -78,14 +87,20 @@ const SAMPLE = listing({
   "README.md": 3174,
 });
 
+const POWERED_BY = `Powered by <a href="${PROJECT_URL}">Simple R2 Share</a>`;
+
+function chrome(overrides: Partial<PageChrome> = {}): PageChrome {
+  return { footerHtml: null, brandName: "SIMPLE R2 SHARE", brandUrl: null, ...overrides };
+}
+
 function allPages(): string[] {
-  const footer = { footerHtml: '<a href="/x">Ops</a>' };
+  const custom = chrome({ footerHtml: '<a href="/x">Ops</a>', brandUrl: "/" });
   return [
-    page({ listing: SAMPLE, config: config({ zipEnabled: true, footerHtml: footer.footerHtml }), readme: { filename: "README.md", html: "<p>hi</p>" } }),
+    page({ listing: SAMPLE, config: config({ zipEnabled: true, ...custom }), readme: { filename: "README.md", html: "<p>hi</p>" } }),
     page({ listing: listing({}) }),
-    renderNotFoundPage(footer, NOW),
+    renderNotFoundPage(custom, NOW),
     renderNotFoundPage(null, NOW),
-    renderErrorPage(footer, NOW),
+    renderErrorPage(custom, NOW),
     renderErrorPage(null, NOW),
   ];
 }
@@ -121,17 +136,36 @@ describe("document shell", () => {
     expect(count(html, "<symbol ")).toBe(5);
   });
 
-  it.each(allPages().map((html, i) => [i, html] as const))("page %i only links to the configured public base", (_, html) => {
+  it.each(allPages().map((html, i) => [i, html] as const))("page %i only links to the configured public base and the project", (_, html) => {
     const urls = html.match(/https?:\/\/[^"'\s<>]*/g) ?? [];
-    for (const url of urls) expect(url.startsWith(`${BASE}/`)).toBe(true);
+    for (const url of urls) expect(url === PROJECT_URL || url.startsWith(`${BASE}/`)).toBe(true);
   });
 
   it("shows the brand, not as a link, and the sync time", () => {
     const html = page();
-    expect(html).toContain('<span class="brand__name">SIMPLE R2 SHARE</span>');
+    expect(html).toContain('<span class="brand"><svg class="icon brand__glyph"');
+    expect(html).toContain('<span class="brand__name">SIMPLE R2 SHARE</span></span>');
     expect(html).not.toMatch(/<a [^>]*>[^<]*SIMPLE R2 SHARE/);
     expect(textOf(html)).toContain("SYNCED 2026-10-27 08:05 UTC");
     expect(html).toContain('datetime="2026-10-27T08:05:59.000Z"');
+  });
+
+  it("uses BRAND_NAME, escaped, for the brand and the title on every page", () => {
+    const custom = chrome({ brandName: "Jim's <Files>" });
+    for (const html of [page({ config: config(custom) }), renderNotFoundPage(custom, NOW), renderErrorPage(custom, NOW)]) {
+      expect(html).toContain('<span class="brand__name">Jim&#39;s &lt;Files&gt;</span>');
+      expect(titleOf(html)).toMatch(/ · Jim&#39;s &lt;Files&gt;$/);
+      expect(html).not.toContain("SIMPLE R2 SHARE");
+    }
+  });
+
+  it("links the brand to BRAND_URL, escaped, on every page", () => {
+    const custom = chrome({ brandUrl: "https://example.com/?a=1&b=2" });
+    for (const html of [page({ config: config(custom) }), renderNotFoundPage(custom, NOW), renderErrorPage(custom, NOW)]) {
+      expect(html).toContain('<a class="brand" href="https://example.com/?a=1&amp;b=2"><svg class="icon brand__glyph"');
+      expect(html).toContain('<span class="brand__name">SIMPLE R2 SHARE</span></a>');
+      expect(html).not.toContain('<span class="brand">');
+    }
   });
 
   it("marks every icon aria-hidden", () => {
@@ -147,18 +181,19 @@ describe("document shell", () => {
 });
 
 describe("footer", () => {
-  it("is omitted when FOOTER_HTML is unset", () => {
-    expect(page()).not.toContain("<footer");
-    expect(renderNotFoundPage({ footerHtml: null }, NOW)).not.toContain("<footer");
-    expect(renderErrorPage(null, NOW)).not.toContain("<footer");
+  it("shows only the credit when FOOTER_HTML is unset", () => {
+    const expected = `<footer class="footer">${POWERED_BY}</footer>`;
+    expect(page()).toContain(expected);
+    expect(renderNotFoundPage(chrome(), NOW)).toContain(expected);
+    expect(renderErrorPage(null, NOW)).toContain(expected);
   });
 
-  it("renders FOOTER_HTML raw on every page", () => {
+  it("renders FOOTER_HTML raw, then the credit, on every page", () => {
     const footerHtml = '© 2026 <a href="/about">Jim</a> &amp; friends';
-    const expected = `<footer class="footer">${footerHtml}</footer>`;
+    const expected = `<footer class="footer">${footerHtml} • ${POWERED_BY}</footer>`;
     expect(page({ config: config({ footerHtml }) })).toContain(expected);
-    expect(renderNotFoundPage({ footerHtml }, NOW)).toContain(expected);
-    expect(renderErrorPage({ footerHtml }, NOW)).toContain(expected);
+    expect(renderNotFoundPage(chrome({ footerHtml }), NOW)).toContain(expected);
+    expect(renderErrorPage(chrome({ footerHtml }), NOW)).toContain(expected);
   });
 
   it("comes after main", () => {
@@ -360,14 +395,15 @@ describe("status pages", () => {
   });
 
   it.each([
-    ["404", renderNotFoundPage({ footerHtml: null }, NOW)],
-    ["error", renderErrorPage({ footerHtml: null }, NOW)],
+    ["404", renderNotFoundPage(chrome(), NOW)],
+    ["error", renderErrorPage(chrome(), NOW)],
   ])("%s page has only the hero: no stats, button, panels or details", (_, html) => {
     expect(html).toContain('<section class="hero hero--status">');
+    const body = html.slice(html.indexOf("<body>"), html.indexOf("<footer"));
     for (const absent of ["stats", "Download all", "panel", "tree", "<h2", "<details", "<a "]) {
-      expect(html).not.toContain(absent);
+      expect(body).not.toContain(absent);
     }
-    const text = textOf(html.slice(html.indexOf("<body>")));
+    const text = textOf(body);
     // Exactly: brand, sync time, big code, title, explanation.
     expect(text).toMatch(/^SIMPLE R2 SHARE SYNCED 2026-10-27 08:05 UTC (404|ERROR) (Share not found|Something went wrong) [^<>]+$/);
     for (const leak of ["Error:", "stack", "R2", "bucket", "rules", "undefined", "null"]) {

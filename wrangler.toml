@@ -12,10 +12,16 @@ bucket_name = "your-bucket-name"
 
 [vars]
 # The bucket's existing public HTTPS base URL (custom domain or r2.dev).
+# A value without a scheme (e.g. "files.example.com") gets https:// added.
 R2_PUBLIC_BASE_URL = "https://files.example.com"
 # Only the exact string "true" enables the "Download all" ZIP endpoint.
 ENABLE_ZIP_DOWNLOAD = "false"
 # Object key of the share rules file, relative to the bucket root.
 SHARE_RULES_KEY = ".r2-share-rules"
-# Trusted single-line footer HTML, rendered verbatim. Empty means no footer.
+# Trusted single-line footer HTML, rendered verbatim before the
+# "Powered by Simple R2 Share" credit. Empty means only the credit.
 FOOTER_HTML = ""
+# Text of the top-left brand and the page title suffix. Empty means "SIMPLE R2 SHARE".
+BRAND_NAME = ""
+# Link target of the top-left brand. Empty means the brand is not a link.
+BRAND_URL = ""
