@@ -1,7 +1,7 @@
 # Simple R2 Share：規則編輯器與短網址設計規格
 
 **日期：** 2026-10-28  
-**狀態：** 待審閱  
+**狀態：** 待審閱（第 4 節的管理頁設計已由 [管理頁畫面與功能設計規格](2026-10-28-admin-ui-design.md) 取代）  
 **部署：** 原有單一 Cloudflare Pages 專案（Pages Functions + R2 binding）
 
 ## 1. 目標與已確認決策
@@ -16,11 +16,11 @@
 
 若 `ENABLE_ZIP_DOWNLOAD=true`，保留現有 ZIP 處理器和 `/api/share-zip` 端點，但改為接受唯一的 `token` 查詢參數，例如 `/api/share-zip?token=<token>`。刪除原本 `dir` 查詢參數與 `parseZipDir()`，ZIP、分享頁與管理端共用同一個解碼函式及 `isShareRoot()` 授權檢查。ZIP 按鈕由相同 token 組成 URL。公開物件下載連結仍直接指向 R2 公開網域，不經 Pages 代理。
 
-管理頁位於 `/admin/`，使用 `public/admin/index.html` 與同源 JS/CSS；管理 API 位於 `functions/api/admin/`。現有 `public/assets`、README 渲染、規則語法、分享清單與 ZIP 串流功能原則上保留。
+管理頁位於 `/admin/`，使用 `public/admin/index.html`、同源 CSS，以及由 esbuild 打包的同源 JS；管理 API 位於 `functions/api/admin/`。前端與伺服器共用 `src/rules.ts`、`src/paths.ts` 與 `src/short-url.ts`，細節見管理頁規格第 10 節。現有 `public/assets`、README 渲染、規則語法、分享清單與 ZIP 串流功能原則上保留。
 
 ## 3. 無狀態可逆短網址（Base58＋無密鑰混淆）
 
-新增 `src/short-url.ts`，實作 `encode(path)` 與 `decode(token)`。公開網址只使用 `/s/<token>/`，沒有版本前綴、編碼模式字元或其他相容層。規則編輯器產生完整短網址，公開頁面和 ZIP 端點只解碼一次。
+新增 `src/short-url.ts`，實作 `encode(path)` 與 `decode(token)`。公開網址只使用 `/s/<token>/`，沒有版本前綴、編碼模式字元或其他相容層。管理頁在管理員點擊複製時，才於前端計算單一路徑的完整短網址；公開頁面和 ZIP 端點只解碼一次。
 
 確定性編解碼流程：
 
@@ -39,21 +39,22 @@ XOR 對任意位元組序列可逆，標準 Base58 編碼可無損還原位元�
 
 Workers Free 每次 HTTP 請求的 CPU 上限為 **10 ms**；等待 R2 回應的 I/O 時間不列入 CPU，但解碼、規則解析、Markdown/HTML 渲染和 ZIP 處理都會計入。效能預算必須以**整個公開請求**量測，不能只測編解碼器。測試案例包含典型資料夾名稱、中文、多層路徑與 1024 位元組邊界；正式 Free 環境需記錄 CPU 使用情形及是否出現 `exceededCpu`。
 
-公開路由每次只解碼一個 token，不做 Base58 編碼或全 Bucket 掃描；ZIP 亦只解碼一次。管理端列舉路由每次只掃描有界數量的 R2 物件鍵（預設最多 100 筆），延續 R2 cursor 分頁，不在單次請求編碼整個 Bucket。對同一頁出現的重複資料夾先去重再編碼。若在極端長路徑或清單處理時超過 Free CPU 額度，應在實作階段以 Workers 實測結果優化編碼核心或調小分頁，避免宣稱未經驗證的效能保證。
+公開路由每次只解碼一個 token，不做 Base58 編碼或全 Bucket 掃描；ZIP 亦只解碼一次。伺服器端完全不做 Base58 編碼：短網址只在管理頁前端、管理員點擊複製時計算一個路徑。管理端的資料夾列舉每次只做一次 `delimiter: "/"` 的 R2 列舉，不做編碼或規則計算。若極端長路徑的解碼超過 Free CPU 額度，應在實作階段以 Workers 實測結果優化解碼核心，避免宣稱未經驗證的效能保證。
 
 ## 4. 規則編輯器
 
-`/admin/` 以純前端頁面實作，不引入第二套應用建置系統。畫面包含規則文字編輯區、驗證錯誤與行號、儲存操作，以及可分頁載入的「分享資料夾 / 短網址」清單與複製連結功能。
+管理頁的畫面、操作流程與管理 API 由 [管理頁畫面與功能設計規格](2026-10-28-admin-ui-design.md) 定義，取代本節原本的「規則文字編輯區」與「分享資料夾 / 短網址」清單設計。重點如下：
 
-- `GET /api/admin/rules`：回傳目前規則原文及 ETag；規則檔不存在時回傳空白文字和「尚未建立」狀態。
-- `PUT /api/admin/rules`：接收 UTF-8 規則原文與先前讀取的 ETag。超過 64 KiB、UTF-8 無效、`parseRules()` 拒絕或版本衝突時不得寫入。以 R2 `put(..., { onlyIf: ... })` 進行條件式更新；首次建立使用 `If-None-Match: *`，有版本時使用 `If-Match`。成功後回傳新的 ETag；衝突回 `409`。
-- `GET /api/admin/shares?cursor=...`：讀取目前已儲存的規則，透過 R2 `list()` 游標分頁列舉物件鍵（每次最多 100 筆），衍生各物件的父目錄，去重後以 `isShareRoot()` 過濾，回傳其原始目錄路徑及短網址。每頁僅掃描有界數量的物件，不建立長期索引。前端逐頁載入並合併去重。R2 是以物件鍵呈現目錄；僅包含沒有任何物件的虛擬資料夾，無法由列舉結果發現。
+- 前端不提供純文字編輯，改以資料夾樹切換每個資料夾的四種規則狀態，規則檔由管理頁依固定格式輸出。
+- `GET /api/admin/rules` 與 `PUT /api/admin/rules` 保留，條件式寫入、64 KiB 上限與 `409` 衝突處理不變，回應另外帶有存檔時間與登入者信箱。
+- 新增 `GET /api/admin/folders?prefix=&cursor=`，以 R2 `delimiter` 列舉逐層載入資料夾。
+- 原本的 `GET /api/admin/shares` 刪除。短網址改由前端在點擊複製時計算，不做批次編碼。
 
-規則清單與已產生短網址的對應關係完全由演算法即時計算，沒有額外儲存。規則儲存後清空已載入的分享清單並重新查詢，避免顯示過期結果。規則檔本身始終不得成為分享內容。列表若出現很多資料夾，採用「載入更多」而非一次全量查詢。
+規則檔本身始終不得成為分享內容；R2 是以物件鍵呈現目錄，沒有任何物件的虛擬資料夾無法由列舉結果發現，只會以規則中的幽靈節點出現在樹上。
 
 ## 5. 驗證與權限
 
-正式網域透過 Cloudflare Zero Trust Access 的 Self-hosted 應用保護 `/admin`、`/admin/*`、`/api/admin/*`。Pages Functions 的 `functions/api/admin/_middleware.ts` 再驗證 Access JWT 的簽章、Issuer、Audience 和期限。正式、`pages.dev`、預覽網域下的所有管理 API 都必須通過驗證；沒有有效 Access 設定時直接拒絕請求，不提供本機或預覽版的公開寫入後門。管理 UI 可以是靜態資源，所有讀寫操作都要由後端驗證。
+正式網域透過 Cloudflare Zero Trust Access 的 Self-hosted 應用保護 `/admin`、`/admin/*`、`/api/admin/*`。Pages Functions 的 `functions/api/admin/_middleware.ts` 再驗證 Access JWT 的簽章、Issuer、Audience 和期限。這個 middleware 自行實作，不使用 `@cloudflare/pages-plugin-cloudflare-access`，並新增 `ACCESS_TEAM_DOMAIN` 與 `ACCESS_AUD` 兩個部署設定，細節見管理頁規格第 9 節。正式、`pages.dev`、預覽網域下的所有管理 API 都必須通過驗證；沒有有效 Access 設定時直接拒絕請求，不提供本機或預覽版的公開寫入後門。管理 UI 可以是靜態資源，所有讀寫操作都要由後端驗證。
 
 管理 API 僅允許讀取與覆寫 `SHARE_RULES_KEY` 指定的單一 R2 物件，不提供任意物件寫入、刪除或檔案上傳。`PUT` 需限制 Content-Type、大小、同源 Origin，並使用適當的防 CSRF 措施；API 回應設定 `Cache-Control: no-store`。靜態管理頁採用獨立、限制同源 JS 與 API 的 CSP，不修改公開分享頁的 CSP。
 
@@ -63,7 +64,7 @@ Workers Free 每次 HTTP 請求的 CPU 上限為 **10 ms**；等待 R2 回應的
 
 非法 token、未獲分享權限與不存在的分享根目錄回傳相同公開 `404`；規則檔失效則預設拒絕分享；R2 暫時性錯誤回傳一般 `500`。管理 API 未登入回傳 `403`，無效規則回 `400` 並提供行號，版本衝突回 `409`，暫時性錯誤回 `500` 且不透露內部金鑰。ZIP 端點使用相同授權判斷與既有串流錯誤機制。
 
-測試包含短網址中英文、空白與特殊字元正反向還原、固定混淆序列與 Base58 正規編碼、錯誤或過長 token、10 ms CPU 預算與邊界長度、規則排除及遞迴目錄、ZIP 下載、規則檔首次建立與並行編輯衝突、無效 JWT、錯誤 Origin，以及大量 R2 物件的游標分頁。刪除原 `/share/*` 與 `?dir=` 相關測試，改為驗證舊路徑直接 `404`，不再提供原路由。
+測試包含短網址中英文、空白與特殊字元正反向還原、固定混淆序列與 Base58 正規編碼、錯誤或過長 token、10 ms CPU 預算與邊界長度、規則排除及遞迴目錄、ZIP 下載、規則檔首次建立與並行編輯衝突、無效 JWT、錯誤 Origin，以及資料夾列舉的游標分頁；管理頁本身的測試見管理頁規格第 11 節。刪除原 `/share/*` 與 `?dir=` 相關測試，改為驗證舊路徑直接 `404`，不再提供原路由。
 
 ## 7. 範圍外
 
