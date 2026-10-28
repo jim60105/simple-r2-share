@@ -1,20 +1,7 @@
 import bs58 from "bs58";
 import { describe, expect, it } from "vitest";
 import { decodeShareToken, encodeShareToken, MAX_PATH_BYTES, MAX_TOKEN_LENGTH } from "../src/short-url";
-
-/** Independent copy of the spec §3 mask so tests can build tokens for invalid paths. */
-function rawToken(bytes: Uint8Array): string {
-  const out = Uint8Array.from(bytes);
-  let x = (0x52325348 ^ Math.imul(out.length, 0x9e3779b1)) >>> 0 || 0x52325348;
-  for (let i = 0; i < out.length; i++) {
-    x ^= x << 13;
-    x ^= x >>> 17;
-    x ^= x << 5;
-    x >>>= 0;
-    out[i] = out[i]! ^ (x & 0xff);
-  }
-  return bs58.encode(out);
-}
+import { tokenOfBytes } from "./tokens";
 
 const utf8 = (text: string) => new TextEncoder().encode(text);
 
@@ -56,7 +43,7 @@ describe("encodeShareToken / decodeShareToken", () => {
 
   it("matches the independent mask implementation", () => {
     for (const segments of [["releases", "project-a"], ["發佈", "專案 A"], LONGEST]) {
-      expect(encodeShareToken(segments)).toBe(rawToken(utf8(segments.join("/"))));
+      expect(encodeShareToken(segments)).toBe(tokenOfBytes(utf8(segments.join("/"))));
     }
   });
 
@@ -119,11 +106,11 @@ describe("decodeShareToken rejects", () => {
     ["C1 control", utf8("a\u0085b")],
     ["over the byte limit", utf8("x".repeat(MAX_PATH_BYTES + 1))],
   ])("tokens that decode to an invalid path: %s", (_label, bytes) => {
-    expect(decodeShareToken(rawToken(bytes))).toBeNull();
+    expect(decodeShareToken(tokenOfBytes(bytes))).toBeNull();
   });
 
   it("accepts the same bytes once they form a valid path", () => {
-    expect(decodeShareToken(rawToken(utf8("x".repeat(MAX_PATH_BYTES))))).toEqual(["x".repeat(MAX_PATH_BYTES)]);
+    expect(decodeShareToken(tokenOfBytes(utf8("x".repeat(MAX_PATH_BYTES))))).toEqual(["x".repeat(MAX_PATH_BYTES)]);
   });
 });
 

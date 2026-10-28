@@ -1,5 +1,5 @@
 /**
- * The ZIP download endpoint `GET` / `HEAD /api/share-zip?dir=<share root>`
+ * The ZIP download endpoint `GET` / `HEAD /api/share-zip?token=<share token>`
  * (spec §3, §7, §8; plan task 9), kept out of `functions/` so tests can call
  * it directly. `functions/api/share-zip.ts` only forwards the request.
  *
@@ -7,8 +7,8 @@
  * 1. Other methods -> `405`, like the share route.
  * 2. Load the settings (`ConfigError` -> generic `500`). ZIP disabled -> the
  *    share route's `404` page, before any R2 call.
- * 3. Exactly one `dir` parameter, valid for `parseZipDir`; otherwise `404`
- *    (also before any R2 call). Other parameters are ignored.
+ * 3. Exactly one `token` parameter that `decodeShareToken` accepts; otherwise
+ *    `404` (also before any R2 call). Other parameters are ignored.
  * 4. Read the rules and authorise the share root with the same helper as the
  *    share page (`loadAuthorisedRules`); unauthorised -> the same `404`.
  * 5. List the share root with the same filtering as the page, so excluded
@@ -26,7 +26,7 @@
  */
 import { loadConfig, type AppConfig, type Env } from "./config";
 import { loadListing } from "./listing";
-import { parseZipDir, toPrefix } from "./paths";
+import { toPrefix } from "./paths";
 import {
   errorResponse,
   loadAuthorisedRules,
@@ -34,6 +34,7 @@ import {
   notFoundResponse,
   responseHeaders,
 } from "./share-handler";
+import { decodeShareToken } from "./short-url";
 import { createZipStream, predictZipLength, type ZipFile } from "./zip-stream";
 
 /**
@@ -78,8 +79,8 @@ export async function handleZipRequest(request: Request, env: Env, now: Date = n
 }
 
 async function planZip(params: URLSearchParams, bucket: R2Bucket, config: AppConfig): Promise<Plan> {
-  const dirs = params.getAll("dir");
-  const segments = dirs.length === 1 ? parseZipDir(dirs[0]) : null;
+  const tokens = params.getAll("token");
+  const segments = tokens.length === 1 ? decodeShareToken(tokens[0] as string) : null;
   if (segments === null) return { kind: "not-found" };
 
   const counter = countSubrequests(bucket);

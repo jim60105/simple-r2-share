@@ -48,6 +48,7 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
 
 function page(overrides: Partial<SharePageInput> = {}): string {
   return renderSharePage({
+    token: "hxR19djQFNp3SS7mNmos88qd",
     segments: SEGMENTS,
     listing: listing({ "a.txt": 412 }),
     readme: null,
@@ -315,19 +316,14 @@ describe("renderSharePage", () => {
   describe("Download all", () => {
     it("is a link to the ZIP endpoint when enabled and the share has files", () => {
       const html = page({ config: config({ zipEnabled: true }) });
-      expect(html).toContain('<a class="button hero__download" href="/api/share-zip?dir=releases%2Fproject-a">');
+      expect(html).toContain('<a class="button hero__download" href="/api/share-zip?token=hxR19djQFNp3SS7mNmos88qd">');
       expect(textOf(html)).toContain("Download all");
       expect(html).not.toContain("<button");
     });
 
-    it("escapes the ZIP href", () => {
-      const name = "it's";
-      const html = page({
-        segments: [name],
-        listing: listing({ "a.txt": 1 }, `${name}/`, rules(`${name}/`)),
-        config: config({ zipEnabled: true }),
-      });
-      expect(html).toContain('href="/api/share-zip?dir=it&#39;s"');
+    it("reuses the page token", () => {
+      const html = page({ token: "4q2N13jyPP7WLE86wopSw", config: config({ zipEnabled: true }) });
+      expect(html).toContain('href="/api/share-zip?token=4q2N13jyPP7WLE86wopSw"');
     });
 
     it("is absent when ZIP download is disabled", () => {

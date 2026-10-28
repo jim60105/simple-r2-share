@@ -4,7 +4,9 @@ import { ERROR_TITLE } from "../src/html";
 import { ALLOWED_METHODS, handleShareRequest } from "../src/share-handler";
 import { contentDisposition, handleZipRequest, ZIP_SUBREQUEST_BUDGET } from "../src/zip-handler";
 import { assertSafeEntryName, createZipStream, predictZipLength } from "../src/zip-stream";
+import { encodeShareToken } from "../src/short-url";
 import { FakeBucket } from "./fake-bucket";
+import { tokenOfBytes } from "./tokens";
 
 const ORIGIN = "https://share.example.com";
 const PUBLIC_BASE = "https://files.example.com";
@@ -62,9 +64,12 @@ function zipRequest(query: string, method = "GET"): Request {
   return new Request(`${ORIGIN}/api/share-zip${query}`, { method });
 }
 
+/** The ZIP query for a folder path such as `releases/project-a`. */
 function zipQuery(dir: string): string {
-  return `?dir=${encodeURIComponent(dir)}`;
+  return `?token=${encodeShareToken(dir.split("/"))}`;
 }
+
+const NOT_SHARED_PAGE = `/s/${encodeShareToken(["nothing"])}/`;
 
 function fetchZip(bucket: FakeBucket, query: string, overrides?: Partial<Omit<Env, "BUCKET">>, method?: string) {
   return handleZipRequest(zipRequest(query, method), envFor(bucket, overrides), NOW);
@@ -173,7 +178,7 @@ describe("ZIP disabled", () => {
       const overrides = { ENABLE_ZIP_DOWNLOAD: flag };
       const response = await fetchZip(bucket, zipQuery("releases/project-a"), overrides);
       const share = await handleShareRequest(
-        new Request(`${ORIGIN}/share/nothing/`),
+        new Request(`${ORIGIN}${NOT_SHARED_PAGE}`),
         envFor(seededBucket(), overrides),
         NOW,
       );
@@ -188,24 +193,23 @@ describe("ZIP disabled", () => {
 
 describe("404", () => {
   async function shareNotFound(): Promise<{ body: string; headers: [string, string][] }> {
-    const response = await handleShareRequest(new Request(`${ORIGIN}/share/nothing/`), envFor(seededBucket()), NOW);
+    const response = await handleShareRequest(new Request(`${ORIGIN}${NOT_SHARED_PAGE}`), envFor(seededBucket()), NOW);
     return { body: await response.text(), headers: [...response.headers] };
   }
 
   it.each([
-    ["missing dir", ""],
-    ["empty dir", "?dir="],
-    ["other parameter only", "?d=releases%2Fproject-a"],
-    ["duplicate dir", "?dir=releases%2Fproject-a&dir=releases%2Fproject-a"],
-    ["leading slash", zipQuery("/releases/project-a")],
-    ["trailing slash", zipQuery("releases/project-a/")],
-    ["dot-dot segment", zipQuery("releases/../releases/project-a")],
-    ["encoded dot-dot", "?dir=releases%2F%2e%2e%2Freleases%2Fproject-a"],
-    ["double-encoded slash", zipQuery("releases%2Fproject-a")],
-    ["backslash", zipQuery("releases\\project-a")],
-    ["empty segment", zipQuery("releases//project-a")],
-    ["NUL", zipQuery("releases/project-a\0")],
-  ])("rejects a bad dir (%s) without touching R2", async (_name, query) => {
+    ["missing token", ""],
+    ["empty token", "?token="],
+    ["other parameter only", `?t=${encodeShareToken(["releases", "project-a"])}`],
+    ["old dir parameter", "?dir=releases%2Fproject-a"],
+    ["duplicate token", `${zipQuery("releases/project-a")}&token=${encodeShareToken(["releases", "project-a"])}`],
+    ["non-Base58 character", "?token=0OIl"],
+    ["over the length limit", `?token=${"z".repeat(1401)}`],
+    ["token of a dot-dot path", `?token=${tokenOfBytes(new TextEncoder().encode("releases/../releases/project-a"))}`],
+    ["token of an empty segment", `?token=${tokenOfBytes(new TextEncoder().encode("releases//project-a"))}`],
+    ["token of a trailing slash", `?token=${tokenOfBytes(new TextEncoder().encode("releases/project-a/"))}`],
+    ["token of invalid UTF-8", `?token=${tokenOfBytes(Uint8Array.of(0xff, 0xfe))}`],
+  ])("rejects a bad token (%s) without touching R2", async (_name, query) => {
     const bucket = seededBucket();
     const response = await fetchZip(bucket, query);
     expect(response.status).toBe(404);

@@ -1,4 +1,4 @@
-# Applies to static assets only; responses from Pages Functions (/share/*)
+# Applies to static assets only; responses from Pages Functions (/s/*, /api/*)
 # set their own headers in src/share-handler.ts. Pages already sends
 # `X-Content-Type-Options: nosniff` and a referrer policy on static assets.
 #

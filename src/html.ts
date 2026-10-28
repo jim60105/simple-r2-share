@@ -98,7 +98,9 @@ export type ChromeSource = PageChrome | null;
 const DEFAULT_CHROME: PageChrome = { footerHtml: null, brandName: DEFAULT_BRAND_NAME, brandUrl: null };
 
 export interface SharePageInput {
-  /** Validated share root segments (from `parseSharePath`), never empty. */
+  /** The share token of the page URL, reused for the ZIP link. */
+  readonly token: string;
+  /** Share root segments decoded from `token`, never empty. */
   readonly segments: readonly string[];
   readonly listing: Listing;
   readonly readme: Readme | null;
@@ -224,7 +226,7 @@ function pushTree(out: string[], nodes: readonly TreeNode[], publicBaseUrl: stri
 
 /** The share page (UI spec §5), including the empty state (§7.1). */
 export function renderSharePage(input: SharePageInput): string {
-  const { segments, listing, readme, config, now } = input;
+  const { token, segments, listing, readme, config, now } = input;
   const name = segments.at(-1);
   if (name === undefined) throw new TypeError("html: segments must not be empty");
 
@@ -238,7 +240,7 @@ export function renderSharePage(input: SharePageInput): string {
   );
   if (config.zipEnabled && listing.fileCount > 0) {
     out.push(
-      `<a class="button hero__download" href="${escapeHtml(zipDownloadPath(segments))}">`,
+      `<a class="button hero__download" href="${escapeHtml(zipDownloadPath(token))}">`,
       icon("download", "button__icon"),
       '<span class="button__label">Download all</span></a>',
     );

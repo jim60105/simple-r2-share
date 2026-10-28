@@ -1,22 +1,26 @@
 /**
  * The single authority for share URLs, R2 key prefixes, public object URLs and
- * README relative links (spec §5). Every function here is pure.
+ * README relative links (spec §5). Every function here is pure and runs in
+ * both Workers and the admin page.
  *
- * Segment rules shared by every untrusted input (share page URL, ZIP `dir`
- * parameter, README hrefs), applied to each segment AFTER it has been decoded
- * exactly once:
+ * Share pages live at `/s/<token>/` (rules editor spec §2, §3): the token
+ * carries the folder path, so folder names never appear in a URL and are never
+ * percent-decoded. Folder segments (from a token, the admin folder listing or
+ * an R2 key) follow `isValidSegment`:
  * - not empty, not `.` and not `..`;
- * - no `/` or `\` (a decoded separator means `%2F` / `%5C` smuggling);
- * - no control characters. The spec only names the null byte; we also reject
- *   the rest of C0, DEL and C1 because no legitimate shared folder needs them
- *   and they make logs, headers and rendered names ambiguous;
- * - no `%XX` escape left over. Such a segment was double-encoded (`%252F`,
- *   `%252e%252e`) and a second decode somewhere else could turn it into a
- *   separator or a dot segment. The cost is that a directory whose real name
- *   contains a literal `%XX` sequence cannot be shared.
+ * - no `/` or `\`;
+ * - no control characters (C0 including NUL, DEL and C1): no legitimate shared
+ *   folder needs them and they make logs, headers and rendered names ambiguous.
+ *
+ * README hrefs are still percent-encoded text, so each of their segments is
+ * decoded exactly once and must additionally contain no `%XX` escape left
+ * over. Such a segment was double-encoded (`%252F`, `%252e%252e`) and a
+ * second decode somewhere else could turn it into a separator or a dot
+ * segment. The cost is that a README cannot link a file whose real name
+ * contains a literal `%XX` sequence.
  */
 
-const SHARE_PREFIX = "/share/";
+const SHORT_SHARE_PREFIX = "/s/";
 const ZIP_ENDPOINT = "/api/share-zip";
 
 // C0 controls (includes NUL), DEL and C1 controls.
@@ -27,10 +31,7 @@ const FORBIDDEN_RAW_ESCAPE = /%(?:2f|5c|00)/i;
 // RFC 3986 scheme, e.g. `https:`, `mailto:`, `javascript:`.
 const URL_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
-/**
- * Rules for one segment of an R2 object key or share token path (keys may
- * contain a literal `%XX`; token paths are never percent-decoded).
- */
+/** Rules for one folder or object key segment (see the module comment). */
 export function isValidSegment(segment: string): boolean {
   return (
     segment !== "" &&
@@ -42,7 +43,7 @@ export function isValidSegment(segment: string): boolean {
   );
 }
 
-/** Rules for one decoded segment that came from a URL or query parameter. */
+/** Rules for one decoded segment that came from a README href. */
 function isSafeDecodedSegment(segment: string): boolean {
   return isValidSegment(segment) && !LEFTOVER_ESCAPE.test(segment);
 }
@@ -61,47 +62,41 @@ function decodeSegment(raw: string): string | null {
 }
 
 /**
- * Parses a share page path such as `URL.pathname` (still percent-encoded),
- * e.g. `/share/releases/project-a/` -> `["releases", "project-a"]`.
- * Returns `null` for anything that is not a canonical share directory path,
- * including the bare `/share/` (the bucket root is never shareable) and paths
- * without the trailing `/`.
- *
- * Note: the WHATWG URL parser already resolves `.`, `..`, `%2e%2e` and `\`
- * before a Pages Function sees `URL.pathname`; those checks here are defence
- * in depth for callers that pass raw strings.
+ * The token of a short share page path such as `URL.pathname`, e.g.
+ * `/s/hxR19djQFNp3SS7mNmos88qd/` -> `hxR19djQFNp3SS7mNmos88qd`, or `null` for
+ * anything else: no trailing `/`, more than one segment, an empty token or a
+ * `%` (tokens are plain Base58, so an escape means the URL is not canonical).
+ * Whether the token decodes to a folder is `decodeShareToken`'s job.
  */
-export function parseSharePath(pathname: string): string[] | null {
-  if (!pathname.startsWith(SHARE_PREFIX) || !pathname.endsWith("/")) return null;
-  const raw = pathname.slice(SHARE_PREFIX.length, -1);
-  if (raw === "" || hasForbiddenRaw(raw) || raw.includes("?") || raw.includes("#")) return null;
+export function parseShortSharePath(pathname: string): string | null {
+  if (!pathname.startsWith(SHORT_SHARE_PREFIX) || !pathname.endsWith("/")) return null;
+  const token = pathname.slice(SHORT_SHARE_PREFIX.length, -1);
+  if (token === "" || token.includes("/") || token.includes("%")) return null;
+  return token;
+}
 
-  const segments: string[] = [];
-  for (const rawSegment of raw.split("/")) {
-    const segment = decodeSegment(rawSegment);
-    if (segment === null || !isSafeDecodedSegment(segment)) return null;
-    segments.push(segment);
-  }
-  return segments;
+/** Canonical share page path for a token, e.g. `/s/hxR19djQFNp3SS7mNmos88qd/`. */
+export function shortSharePath(token: string): string {
+  return `${SHORT_SHARE_PREFIX}${token}/`;
+}
+
+/** ZIP download path for a token, e.g. `/api/share-zip?token=hxR19djQFNp3SS7mNmos88qd`. */
+export function zipDownloadPath(token: string): string {
+  return `${ZIP_ENDPOINT}?token=${encodeURIComponent(token)}`;
 }
 
 /**
- * Parses the ZIP endpoint's `dir` query value as returned by
- * `URLSearchParams.get("dir")` (already decoded once), e.g.
- * `releases/project-a` -> `["releases", "project-a"]`. The canonical form has
- * no leading or trailing `/`; anything else, including a missing parameter,
- * returns `null`. No further decoding is applied.
+ * Parses the admin folder listing's `prefix` query value (already decoded
+ * once by `URLSearchParams`): `""` is the bucket root (`[]`), anything else
+ * must end with `/`, must not start with `/` and must consist of
+ * `isValidSegment` segments, e.g. `releases/project-a/` ->
+ * `["releases", "project-a"]`. A missing parameter counts as the root.
  */
-export function parseZipDir(dir: string | null | undefined): string[] | null {
-  if (!dir) return null;
-  const segments = dir.split("/");
-  return segments.every(isSafeDecodedSegment) ? segments : null;
-}
-
-function assertSegments(segments: readonly string[]): void {
-  if (segments.length === 0 || !segments.every(isSafeDecodedSegment)) {
-    throw new TypeError("paths: segments must come from parseSharePath or parseZipDir");
-  }
+export function parseFolderPrefix(prefix: string | null): string[] | null {
+  if (prefix === null || prefix === "") return [];
+  if (!prefix.endsWith("/") || prefix.startsWith("/")) return null;
+  const segments = prefix.slice(0, -1).split("/");
+  return segments.every(isValidSegment) ? segments : null;
 }
 
 /**
@@ -111,20 +106,10 @@ function assertSegments(segments: readonly string[]): void {
  * prefix or the bucket root).
  */
 export function toPrefix(segments: readonly string[]): string {
-  assertSegments(segments);
+  if (segments.length === 0 || !segments.every(isValidSegment)) {
+    throw new TypeError("paths: segments must come from decodeShareToken");
+  }
   return `${segments.join("/")}/`;
-}
-
-/** Canonical share page path for validated segments, e.g. `/share/releases/%E5%B0%88%E6%A1%88/`. */
-export function sharePagePath(segments: readonly string[]): string {
-  assertSegments(segments);
-  return `${SHARE_PREFIX}${segments.map(encodeURIComponent).join("/")}/`;
-}
-
-/** ZIP download path for validated segments, e.g. `/api/share-zip?dir=releases%2Fproject-a`. */
-export function zipDownloadPath(segments: readonly string[]): string {
-  assertSegments(segments);
-  return `${ZIP_ENDPOINT}?dir=${encodeURIComponent(segments.join("/"))}`;
 }
 
 /**

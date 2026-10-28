@@ -76,7 +76,7 @@ export interface Rules {
   readonly rules: readonly ShareRule[];
   /**
    * Whether the directory may have its own share page. `segments` come from
-   * `parseSharePath` / `parseZipDir`; the bucket root (`[]`) and invalid
+   * `decodeShareToken`; the bucket root (`[]`) and invalid
    * segments are never share roots.
    */
   isShareRoot(segments: readonly string[]): boolean;

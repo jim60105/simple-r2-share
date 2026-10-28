@@ -1,15 +1,16 @@
 /**
  * The share page route (spec §6, §8; plan task 8), kept out of `functions/` so
- * tests can call it directly with a fake bucket. `functions/share/[[path]].ts`
+ * tests can call it directly with a fake bucket. `functions/s/[[path]].ts`
  * only forwards the request and bindings.
  *
- * Flow for `GET` / `HEAD /share/<dir>/`:
+ * Flow for `GET` / `HEAD /s/<token>/` (rules editor spec §2, §3):
  * 1. Load the deployment settings. `ConfigError` -> generic error page `500`
  *    (the brand and footer still render from `BRAND_*` and `FOOTER_HTML`).
- * 2. Validate the path with `parseSharePath`. Invalid -> `404`, before any R2
- *    call. A valid directory path that only lacks the trailing `/` gets a
- *    `308` to the canonical URL; this happens before the rules are read, so
- *    the redirect says nothing about whether the share exists.
+ * 2. Take the token with `parseShortSharePath`. A path that only lacks the
+ *    trailing `/` gets a `308` to the canonical URL; this happens before the
+ *    token is decoded and the rules are read, so the redirect says nothing
+ *    about whether the share exists. Then decode the token once with
+ *    `decodeShareToken`. Anything invalid -> `404`, before any R2 call.
  * 3. Read the rules. A missing or invalid rules file authorises nothing (the
  *    reason goes to the server log only) and every unauthorised directory gets
  *    the same `404` page, byte for byte.
@@ -26,9 +27,10 @@
 import { loadConfig, pageChromeFromEnv, type AppConfig, type Env } from "./config";
 import { renderErrorPage, renderNotFoundPage, renderSharePage } from "./html";
 import { loadListing } from "./listing";
-import { parseSharePath, sharePagePath, toPrefix } from "./paths";
+import { parseShortSharePath, shortSharePath, toPrefix } from "./paths";
 import { loadReadme, MAX_README_BYTES, selectReadme } from "./readme";
 import { loadRules, type Rules } from "./rules";
+import { decodeShareToken } from "./short-url";
 
 export const ALLOWED_METHODS = "GET, HEAD";
 
@@ -138,7 +140,7 @@ type Outcome =
   | { readonly kind: "redirect"; readonly location: string };
 
 /**
- * Handles one request to `/share/*`. `now` is the render time shown as
+ * Handles one request to `/s/*`. `now` is the render time shown as
  * `SYNCED …` (tests pass a fixed date).
  */
 export async function handleShareRequest(request: Request, env: Env, now: Date = new Date()): Promise<Response> {
@@ -167,11 +169,13 @@ export async function handleShareRequest(request: Request, env: Env, now: Date =
 }
 
 async function resolveShare(pathname: string, bucket: R2Bucket, config: AppConfig, now: Date): Promise<Outcome> {
-  const segments = parseSharePath(pathname);
-  if (segments === null) {
-    const withSlash = pathname.endsWith("/") ? null : parseSharePath(`${pathname}/`);
-    return withSlash === null ? { kind: "not-found" } : { kind: "redirect", location: sharePagePath(withSlash) };
+  const token = parseShortSharePath(pathname);
+  if (token === null) {
+    const withSlash = pathname.endsWith("/") ? null : parseShortSharePath(`${pathname}/`);
+    return withSlash === null ? { kind: "not-found" } : { kind: "redirect", location: shortSharePath(withSlash) };
   }
+  const segments = decodeShareToken(token);
+  if (segments === null) return { kind: "not-found" };
 
   const rules = await loadAuthorisedRules(bucket, config, segments, "share page");
   if (rules === null) return { kind: "not-found" };
@@ -182,5 +186,5 @@ async function resolveShare(pathname: string, bucket: R2Bucket, config: AppConfi
     console.warn(`share page: ${readmeFile.key} is larger than ${MAX_README_BYTES} bytes and is not shown`);
   }
   const readme = await loadReadme(bucket, { listing, rules, publicBaseUrl: config.publicBaseUrl });
-  return { kind: "page", html: renderSharePage({ segments, listing, readme, config, now }) };
+  return { kind: "page", html: renderSharePage({ token, segments, listing, readme, config, now }) };
 }

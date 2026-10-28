@@ -2,204 +2,114 @@ import { describe, expect, it } from "vitest";
 import {
   isRelativeHref,
   isSafeKey,
+  isValidSegment,
   isWithin,
-  parseSharePath,
-  parseZipDir,
+  parseFolderPrefix,
+  parseShortSharePath,
   publicUrl,
   relativeKey,
   resolveReadmeHref,
-  sharePagePath,
+  shortSharePath,
   toPrefix,
   zipDownloadPath,
 } from "../src/paths";
+import { decodeShareToken, encodeShareToken } from "../src/short-url";
 
 const BASE = "https://files.example.com";
 const ROOT = ["releases", "project-a"];
+const TOKEN = "hxR19djQFNp3SS7mNmos88qd"; // releases/project-a
 
-describe("parseSharePath", () => {
-  it.each([
-    ["/share/releases/", ["releases"]],
-    ["/share/releases/project-a/", ["releases", "project-a"]],
-    ["/share/a/b/c/d/", ["a", "b", "c", "d"]],
-    ["/share/%E5%B0%88%E6%A1%88%20a/", ["專案 a"]],
-    ["/share/專案 a/", ["專案 a"]],
-    ["/share/v1.0/", ["v1.0"]],
-    ["/share/.hidden/", [".hidden"]],
-    ["/share/.../", ["..."]],
-    ["/share/a%2Bb/", ["a+b"]],
-    ["/share/a+b/", ["a+b"]],
-    ["/share/100%25%20off/", ["100% off"]],
-    ["/share/q%3F%23/", ["q?#"]],
-  ])("accepts %j", (pathname, expected) => {
-    expect(parseSharePath(pathname)).toEqual(expected);
-  });
-
-  it("accepts what the WHATWG URL parser produces for non-ASCII names", () => {
-    const { pathname } = new URL("https://share.example.com/share/releases/專案 a/");
-    expect(parseSharePath(pathname)).toEqual(["releases", "專案 a"]);
-  });
-
-  describe("spec §10 URL attack cases", () => {
-    it.each([
-      ["../ escaping the share prefix", "/share/../"],
-      ["../ at the start", "/share/../releases/"],
-      ["../ in the middle", "/share/releases/../secret/"],
-      ["../ at the end", "/share/releases/project-a/../"],
-      [". segment", "/share/releases/./project-a/"],
-      [". alone", "/share/./"],
-    ])("rejects literal dot segments: %s", (_label, pathname) => {
-      expect(parseSharePath(pathname)).toBeNull();
-    });
-
-    it.each([
-      ["%2e%2e", "/share/releases/%2e%2e/secret/"],
-      ["%2E%2E", "/share/releases/%2E%2E/secret/"],
-      ["mixed %2e.", "/share/releases/%2e./secret/"],
-      ["mixed .%2E", "/share/releases/.%2E/secret/"],
-      ["%2e", "/share/releases/%2e/project-a/"],
-      ["%2e%2e as only segment", "/share/%2e%2e/"],
-    ])("rejects encoded dot segments: %s", (_label, pathname) => {
-      expect(parseSharePath(pathname)).toBeNull();
-    });
-
-    it.each([
-      ["%2F", "/share/releases%2Fproject-a/"],
-      ["%2f", "/share/releases%2fproject-a/"],
-      ["%2F..", "/share/releases/project-a%2F..%2Fsecret/"],
-      ["%2F at the start", "/share/%2Fetc/"],
-    ])("rejects encoded slash: %s", (_label, pathname) => {
-      expect(parseSharePath(pathname)).toBeNull();
-    });
-
-    it.each([
-      ["%5C", "/share/releases%5Cproject-a/"],
-      ["%5c", "/share/releases%5cproject-a/"],
-      ["%5C..", "/share/releases/%5C..%5Csecret/"],
-      ["literal backslash", "/share/releases\\project-a/"],
-      ["literal backslash dot-dot", "/share/releases/..\\secret/"],
-    ])("rejects backslash: %s", (_label, pathname) => {
-      expect(parseSharePath(pathname)).toBeNull();
-    });
-
-    it.each([
-      ["%252F", "/share/releases%252Fproject-a/"],
-      ["%252f", "/share/releases%252fproject-a/"],
-      ["%255C", "/share/releases%255Cproject-a/"],
-      ["%252e%252e", "/share/releases/%252e%252e/secret/"],
-      ["%252E%252E", "/share/releases/%252E%252E/"],
-      ["%2500", "/share/releases%2500/"],
-      ["%2541 (any leftover escape)", "/share/a%2541/"],
-      ["triple %25252F", "/share/releases%25252Fproject-a/"],
-    ])("rejects double encoding: %s", (_label, pathname) => {
-      expect(parseSharePath(pathname)).toBeNull();
-    });
-
-    it.each([
-      ["leading //", "/share//releases/"],
-      ["middle //", "/share/releases//project-a/"],
-      ["trailing //", "/share/releases/project-a//"],
-      ["only //", "/share//"],
-      ["many slashes", "/share///"],
-    ])("rejects repeated separators: %s", (_label, pathname) => {
-      expect(parseSharePath(pathname)).toBeNull();
-    });
-
-    it("never yields a parent or bucket-root prefix for an attack path", () => {
-      const attacks = [
-        "/share/releases/project-a/../",
-        "/share/releases/project-a/%2e%2e/",
-        "/share/releases/project-a%2F..%2F/",
-        "/share/releases/project-a%5C..%5C/",
-        "/share/releases/project-a/%252e%252e/",
-        "/share//",
-        "/share/",
-      ];
-      for (const pathname of attacks) {
-        expect(parseSharePath(pathname), pathname).toBeNull();
-      }
-    });
-  });
+describe("isValidSegment", () => {
+  it.each(["releases", "專案 a", "v1.0", ".hidden", "...", "100% off", "literal%41", "q?#", "a+b", "emoji 📦"])(
+    "accepts %j",
+    (segment) => {
+      expect(isValidSegment(segment)).toBe(true);
+    },
+  );
 
   it.each([
-    ["literal NUL", "/share/a\0b/"],
-    ["%00", "/share/a%00b/"],
-    ["tab", "/share/a%09b/"],
-    ["newline", "/share/a%0Ab/"],
-    ["DEL", "/share/a%7Fb/"],
-    ["C1 control", "/share/a%C2%85b/"],
-  ])("rejects control characters: %s", (_label, pathname) => {
-    expect(parseSharePath(pathname)).toBeNull();
-  });
-
-  it.each([
-    ["lone %", "/share/a%/"],
-    ["non-hex escape", "/share/a%G1/"],
-    ["truncated escape", "/share/a%2/"],
-    ["truncated UTF-8", "/share/%E5%B0/"],
-    ["invalid UTF-8", "/share/%FF/"],
-    ["encoded surrogate", "/share/%ED%A0%80/"],
-  ])("rejects malformed percent-encoding: %s", (_label, pathname) => {
-    expect(parseSharePath(pathname)).toBeNull();
-  });
-
-  it.each([
-    ["no trailing slash", "/share/releases/project-a"],
-    ["no trailing slash, one segment", "/share/releases"],
-    ["bare /share", "/share"],
-    ["bucket root /share/", "/share/"],
     ["empty", ""],
-    ["root", "/"],
-    ["other route", "/api/share-zip/"],
-    ["similar prefix", "/shared/releases/"],
-    ["uppercase prefix", "/SHARE/releases/"],
-    ["no leading slash", "share/releases/"],
-    ["query in raw path", "/share/releases?x=1/"],
-    ["fragment in raw path", "/share/releases#x/"],
-  ])("rejects non-share paths: %s", (_label, pathname) => {
-    expect(parseSharePath(pathname)).toBeNull();
+    [".", "."],
+    ["..", ".."],
+    ["slash", "a/b"],
+    ["backslash", "a\\b"],
+    ["NUL", "a\0b"],
+    ["tab", "a\tb"],
+    ["newline", "a\nb"],
+    ["DEL", "a\u007fb"],
+    ["C1 control", "a\u0085b"],
+  ])("rejects %s", (_label, segment) => {
+    expect(isValidSegment(segment)).toBe(false);
   });
 });
 
-describe("parseZipDir", () => {
-  it.each([
-    ["releases", ["releases"]],
-    ["releases/project-a", ["releases", "project-a"]],
-    ["releases/專案 a", ["releases", "專案 a"]],
-    ["100% off", ["100% off"]],
-  ])("accepts %j", (dir, expected) => {
-    expect(parseZipDir(dir)).toEqual(expected);
+describe("parseShortSharePath and shortSharePath", () => {
+  it("extracts the token of a canonical share path", () => {
+    expect(parseShortSharePath(`/s/${TOKEN}/`)).toBe(TOKEN);
+    expect(shortSharePath(TOKEN)).toBe(`/s/${TOKEN}/`);
   });
 
-  it("accepts the value URLSearchParams decodes from the spec example", () => {
-    const dir = new URL("https://share.example.com/api/share-zip?dir=releases%2Fproject-a").searchParams.get("dir");
-    expect(parseZipDir(dir)).toEqual(["releases", "project-a"]);
+  it("round-trips through the URL parser and decodeShareToken", () => {
+    const segments = ["releases", "專案 a", "100% off", "q?#", "a+b"];
+    const { pathname } = new URL(shortSharePath(encodeShareToken(segments)), "https://share.example.com");
+    const token = parseShortSharePath(pathname);
+    expect(token && decodeShareToken(token)).toEqual(segments);
   });
 
   it.each([
-    ["missing", null],
-    ["undefined", undefined],
+    ["no trailing slash", `/s/${TOKEN}`],
+    ["bare /s/", "/s/"],
+    ["bare /s", "/s"],
     ["empty", ""],
-    ["root slash", "/"],
-    ["leading slash", "/releases"],
-    ["trailing slash", "releases/project-a/"],
-    ["repeated separator", "releases//project-a"],
-    ["..", "releases/.."],
-    ["../ escape", "../releases"],
-    [".", "releases/./project-a"],
-    ["backslash", "releases\\project-a"],
-    ["NUL", "releases\0"],
-    ["control character", "releases\n"],
-    ["double-encoded slash (%252F)", "releases%2Fproject-a"],
-    ["double-encoded dots (%252e)", "releases/%2e%2e"],
-    ["double-encoded backslash (%255C)", "releases%5Cproject-a"],
-  ])("rejects %s", (_label, dir) => {
-    expect(parseZipDir(dir)).toBeNull();
+    ["root", "/"],
+    ["two segments", `/s/${TOKEN}/x/`],
+    ["repeated separator", `/s//${TOKEN}/`],
+    ["trailing //", `/s/${TOKEN}//`],
+    ["percent escape", "/s/hxR19%64jQ/"],
+    ["encoded slash", `/s/${TOKEN}%2F/`],
+    ["old share route", "/share/releases/project-a/"],
+    ["similar prefix", `/sx/${TOKEN}/`],
+    ["uppercase prefix", `/S/${TOKEN}/`],
+    ["no leading slash", `s/${TOKEN}/`],
+  ])("rejects %s", (_label, pathname) => {
+    expect(parseShortSharePath(pathname)).toBeNull();
+  });
+});
+
+describe("zipDownloadPath", () => {
+  it("builds the ZIP path from the token", () => {
+    expect(zipDownloadPath(TOKEN)).toBe(`/api/share-zip?token=${TOKEN}`);
   });
 
-  it("does not decode again", () => {
-    const dir = new URLSearchParams("dir=releases%252Fproject-a").get("dir");
-    expect(dir).toBe("releases%2Fproject-a");
-    expect(parseZipDir(dir)).toBeNull();
+  it("round-trips through URLSearchParams", () => {
+    const url = new URL(zipDownloadPath(TOKEN), "https://share.example.com");
+    expect(url.searchParams.getAll("token")).toEqual([TOKEN]);
+  });
+});
+
+describe("parseFolderPrefix", () => {
+  it.each([
+    [null, []],
+    ["", []],
+    ["releases/", ["releases"]],
+    ["releases/project-a/", ["releases", "project-a"]],
+    ["發佈/專案 A/", ["發佈", "專案 A"]],
+    ["100%25 off/", ["100%25 off"]],
+  ])("accepts %j", (prefix, expected) => {
+    expect(parseFolderPrefix(prefix)).toEqual(expected);
+  });
+
+  it.each([
+    ["root slash", "/"],
+    ["leading slash", "/releases/"],
+    ["no trailing slash", "releases"],
+    ["repeated separator", "releases//"],
+    ["..", "releases/../"],
+    [".", "./"],
+    ["backslash", "a\\b/"],
+    ["control character", "a\nb/"],
+  ])("rejects %s", (_label, prefix) => {
+    expect(parseFolderPrefix(prefix)).toBeNull();
   });
 });
 
@@ -208,10 +118,11 @@ describe("toPrefix", () => {
     expect(toPrefix(["releases"])).toBe("releases/");
     expect(toPrefix(["releases", "project-a"])).toBe("releases/project-a/");
     expect(toPrefix(["releases", "專案 a"])).toBe("releases/專案 a/");
+    expect(toPrefix(["100%41"])).toBe("100%41/");
   });
 
-  it("round-trips parseSharePath output", () => {
-    const segments = parseSharePath("/share/releases/project-a/");
+  it("round-trips decodeShareToken output", () => {
+    const segments = decodeShareToken(TOKEN);
     expect(segments && toPrefix(segments)).toBe("releases/project-a/");
   });
 
@@ -223,34 +134,6 @@ describe("toPrefix", () => {
     ["backslash", ["a\\b"]],
   ])("throws for %s", (_label, segments) => {
     expect(() => toPrefix(segments)).toThrow(TypeError);
-  });
-});
-
-describe("sharePagePath and zipDownloadPath", () => {
-  it("builds the canonical share page path", () => {
-    expect(sharePagePath(["releases", "project-a"])).toBe("/share/releases/project-a/");
-    expect(sharePagePath(["releases", "專案 a"])).toBe("/share/releases/%E5%B0%88%E6%A1%88%20a/");
-  });
-
-  it("round-trips through parseSharePath and the URL parser", () => {
-    const segments = ["releases", "專案 a", "100% off", "q?#", "a+b"];
-    const { pathname } = new URL(sharePagePath(segments), "https://share.example.com");
-    expect(parseSharePath(pathname)).toEqual(segments);
-  });
-
-  it("builds the ZIP download path from the spec example", () => {
-    expect(zipDownloadPath(["releases", "project-a"])).toBe("/api/share-zip?dir=releases%2Fproject-a");
-  });
-
-  it("round-trips through URLSearchParams and parseZipDir", () => {
-    const segments = ["releases", "專案 a", "100% off", "a&b=c"];
-    const url = new URL(zipDownloadPath(segments), "https://share.example.com");
-    expect(parseZipDir(url.searchParams.get("dir"))).toEqual(segments);
-  });
-
-  it("refuses invalid segments", () => {
-    expect(() => sharePagePath([])).toThrow(TypeError);
-    expect(() => zipDownloadPath([".."])).toThrow(TypeError);
   });
 });
 
