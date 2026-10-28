@@ -59,7 +59,7 @@ function expectCommonHeaders(response: Response, contentType: string | null = "t
   expect(response.headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
   const csp = response.headers.get("Content-Security-Policy");
   expect(csp).toContain("default-src 'none'");
-  expect(csp).toContain("script-src 'none'");
+  expect(csp).toContain("script-src 'self';");
   expect(csp).toContain("frame-ancestors 'none'");
 }
 
@@ -348,9 +348,9 @@ describe("methods", () => {
 });
 
 describe("contentSecurityPolicy", () => {
-  it("allows images from the R2 public origin only, and no scripts", () => {
+  it("allows images from the R2 public origin only, and same-origin scripts only (Cloudflare /cdn-cgi/)", () => {
     expect(contentSecurityPolicy("https://files.example.com")).toBe(
-      "default-src 'none'; script-src 'none'; style-src 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; " +
+      "default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; " +
         "img-src 'self' https://files.example.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     );
   });

@@ -6,7 +6,7 @@
 
 **功能特點**
 
-- 伺服器端渲染 HTML：不含 JavaScript，無任何外部請求。資料夾使用原生 `<details>` 標籤，無需腳本即可展開與摺疊。
+- 伺服器端渲染 HTML：本身不含 JavaScript，無任何外部請求。Content-Security-Policy 仍允許同源腳本，因此 Cloudflare 注入 `/cdn-cgi/scripts/…` 的功能（例如電子郵件地址混淆）可正常運作。資料夾使用原生 `<details>` 標籤，無需腳本即可展開與摺疊。
 - 白名單規則檔案：採用類似 `.gitignore` 的語法（反向邏輯：未明文允許的項目皆不分享）。以 `!` 開頭的規則會隱藏資料夾與檔案。
 - 直接連線：檔案連結與 README 圖片直接指向儲存貯體的公開 URL，不經過代理轉發。
 - 安全渲染 README：原始 HTML 均轉為純文字呈現；超出分享範圍或指向隱藏檔案的相對連結直接停用；禁止載入外部圖片。
@@ -53,7 +53,7 @@ GET /share/releases/project-a/
 | `R2_PUBLIC_BASE_URL` | 是 | 儲存貯體的公開基礎 URL，例如 `https://files.example.com` 或 `https://pub-….r2.dev`。Cloudflare 自訂網域與 r2.dev 一律使用 HTTPS，因此未指定協定的數值（例如 `files.example.com`）會自動補上 `https://`。其他協定（包含 `http://`）皆會被拒絕。URL 不可包含認證資訊、`?query` 參數或 `#fragment` 錨點。允許指定路徑前綴（例如 `https://cdn.example.com/bucket`），結尾斜線會自動忽略。物件 URL 會組裝為 `<base>/<key，每個路徑片段均經百分比編碼>`。若未設定或數值格式錯誤，所有請求皆回傳一般錯誤頁面。 |
 | `ENABLE_ZIP_DOWNLOAD` | 否 | 只有完整符合字串 `"true"` 才會開啟「全部下載」按鈕與 `/api/share-zip` 端點。其他數值（包含 `"TRUE"`、`"1"` 或留空）皆維持關閉。預設為 `"false"`。 |
 | `SHARE_RULES_KEY` | 否 | 規則檔案相對於儲存貯體根目錄的物件鍵值。預設為 `.r2-share-rules`（數值留空時亦套用預設值）。 |
-| `FOOTER_HTML` | 否 | 單行 HTML 內容，會以**不跳脫**形式渲染在所有頁面的 `<footer>` 內，包含 404 與錯誤頁面。每個頁面的頁尾結尾固定顯示 `Powered by Simple R2 Share`，並連結至本專案；設定 `FOOTER_HTML` 時，其內容會排在前面，並以 ` • ` 分隔。留空或未設定時只顯示這段標示。此欄位視同程式碼，僅限網站管理員設定。頁面的 Content-Security-Policy 仍然有效，因此 `<script>` 無法執行，`<style>` 標籤與外部樣式表會被阻擋，字型僅限從本站載入，圖片僅限從本站或 `R2_PUBLIC_BASE_URL` 來源載入。行內 `style="…"` 屬性與一般連結可正常運作。Cloudflare 對單一環境變數設有 5 KB 限制。 |
+| `FOOTER_HTML` | 否 | 單行 HTML 內容，會以**不跳脫**形式渲染在所有頁面的 `<footer>` 內，包含 404 與錯誤頁面。每個頁面的頁尾結尾固定顯示 `Powered by Simple R2 Share`，並連結至本專案；設定 `FOOTER_HTML` 時，其內容會排在前面，並以 ` • ` 分隔。留空或未設定時只顯示這段標示。此欄位視同程式碼，僅限網站管理員設定。頁面的 Content-Security-Policy 仍然有效，因此行內 `<script>` 與其他網站的腳本無法執行，`<style>` 標籤與外部樣式表會被阻擋，字型僅限從本站載入，圖片僅限從本站或 `R2_PUBLIC_BASE_URL` 來源載入。行內 `style="…"` 屬性與一般連結可正常運作。Cloudflare 對單一環境變數設有 5 KB 限制。 |
 | `BRAND_NAME` | 否 | 左上角品牌名稱的文字，同時作為頁面標題的後綴。以純文字處理並經過跳脫。預設為 `SIMPLE R2 SHARE`（數值留空時亦套用預設值）。 |
 | `BRAND_URL` | 否 | 點擊左上角品牌名稱時前往的連結，例如 `https://example.com/`。留空或未設定表示品牌名稱不設連結。 |
 

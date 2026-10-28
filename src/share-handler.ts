@@ -37,8 +37,14 @@ const TEXT_TYPE = "text/plain; charset=utf-8";
 
 /**
  * Content-Security-Policy for every response of this route. The pages contain
- * no script at all; styles, fonts and the favicon come from this origin; the
- * only cross-origin loads are README images on the R2 public domain.
+ * no script of their own; styles, fonts and the favicon come from this origin;
+ * the only cross-origin loads are README images on the R2 public domain.
+ *
+ * `script-src 'self'` exists for Cloudflare zone features that inject a
+ * same-origin `/cdn-cgi/scripts/…` file into the HTML, such as Email Address
+ * Obfuscation (`email-decode.min.js`). Nothing else on this origin can run as
+ * a script: function responses and static assets are sent with `nosniff` and
+ * none of them is JavaScript, and inline scripts stay blocked.
  *
  * `style-src-attr 'unsafe-inline'` lets inline `style` attributes through
  * (markdown-it writes `style="text-align:…"` on aligned table cells, and the
@@ -49,7 +55,7 @@ const TEXT_TYPE = "text/plain; charset=utf-8";
 export function contentSecurityPolicy(imageOrigin: string | null): string {
   return [
     "default-src 'none'",
-    "script-src 'none'",
+    "script-src 'self'",
     "style-src 'self'",
     "style-src-attr 'unsafe-inline'",
     "font-src 'self'",
