@@ -1,5 +1,7 @@
 # Simple R2 Share
 
+![Share page for an example folder: hero with file count and download button, an expandable file tree, and the rendered README](docs/share-page.png)
+
 [[English](README.md) | [正體中文](README.zh.md)]
 
 Read-only folder sharing pages for a public [Cloudflare R2](https://developers.cloudflare.com/r2/) bucket, served by Cloudflare Pages Functions. The folders to share are listed in one rules file at the bucket root, which an admin page behind Cloudflare Access edits as a folder tree. Each shared folder gets a short URL `/s/<token>/` with an expandable file tree, links to the files on the bucket's existing public URL, and the folder's `README.md` rendered underneath. A "Download all" ZIP button is optional. Every page is built from the bucket's current contents on each request, so there is nothing to publish or rebuild when files or rules change.
@@ -84,6 +86,8 @@ The committed `wrangler.toml` deliberately has no `pages_build_output_dir` key, 
 Changes to R2 objects and to the rules file **do not** need a deployment. The next request sees them.
 
 ## Admin page
+
+![Admin page: folder tree with a rule button group per folder, a pending change marked before and after, and the Save bar](docs/admin-page.png)
 
 `/admin/` shows the bucket's folders as a tree, loading one level at a time. Each folder has four rule buttons:
 
