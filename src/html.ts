@@ -12,6 +12,11 @@
  * deployment setting, UI spec §5.5; it must never come from R2 or a request).
  * `brandName` and `brandUrl` are trusted too, but still escaped as text.
  *
+ * Share pages carry Open Graph metadata (`og:type`, `og:site_name`,
+ * `og:title`, `og:url`, and `og:image` / `og:image:alt` from the first image
+ * the README panel shows). The 404 and error pages have none, so a preview of
+ * a broken link reveals nothing.
+ *
  * Markup / class contract for `public/assets/theme.css` (Task 7):
  *
  *   <body>
@@ -77,7 +82,7 @@ import { DEFAULT_BRAND_NAME, type AppConfig, type PageChrome } from "./config";
 import { bytesQuantity, CJK_RUN, fileCountQuantity, folderCountQuantity, formatBytes, formatItemCount, formatSyncedTime, type Quantity } from "./format";
 import type { Listing, TreeNode } from "./listing";
 import { publicUrl, zipDownloadPath } from "./paths";
-import type { Readme } from "./readme";
+import type { Readme, ReadmeImage } from "./readme";
 
 export const PROJECT_NAME = "Simple R2 Share";
 export const PROJECT_URL = "https://github.com/jim60105/simple-r2-share";
@@ -102,6 +107,8 @@ export interface SharePageInput {
   readonly token: string;
   /** Share root segments decoded from `token`, never empty. */
   readonly segments: readonly string[];
+  /** Canonical URL of this page, used as `og:url`. */
+  readonly url: string;
   readonly listing: Listing;
   readonly readme: Readme | null;
   readonly config: Pick<AppConfig, "publicBaseUrl" | "zipEnabled"> & PageChrome;
@@ -157,8 +164,15 @@ function brandNameHtml(name: string): string {
   return html + escapeHtml(name.slice(last));
 }
 
+/** Open Graph metadata of a share page; status pages have none. */
+interface OpenGraph {
+  readonly title: string;
+  readonly url: string;
+  readonly image: ReadmeImage | null;
+}
+
 /** Shared document start: head, sprite and top bar. */
-function pushPageStart(out: string[], title: string, chrome: ChromeSource, now: Date): void {
+function pushPageStart(out: string[], title: string, chrome: ChromeSource, now: Date, og?: OpenGraph): void {
   const { brandName, brandUrl } = chrome ?? DEFAULT_CHROME;
   const brandTag = brandUrl ? "a" : "span";
   const brandHref = brandUrl ? ` href="${escapeHtml(brandUrl)}"` : "";
@@ -167,6 +181,20 @@ function pushPageStart(out: string[], title: string, chrome: ChromeSource, now: 
     '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
     '<meta name="color-scheme" content="dark">',
     `<title>${escapeHtml(title)} · ${escapeHtml(brandName)}</title>`,
+  );
+  if (og !== undefined) {
+    out.push(
+      '<meta property="og:type" content="website">',
+      `<meta property="og:site_name" content="${escapeHtml(brandName)}">`,
+      `<meta property="og:title" content="${escapeHtml(og.title)}">`,
+      `<meta property="og:url" content="${escapeHtml(og.url)}">`,
+    );
+    if (og.image !== null) {
+      out.push(`<meta property="og:image" content="${escapeHtml(og.image.url)}">`);
+      if (og.image.alt !== "") out.push(`<meta property="og:image:alt" content="${escapeHtml(og.image.alt)}">`);
+    }
+  }
+  out.push(
     '<link rel="stylesheet" href="/fonts/JimMonoTC.css"><link rel="stylesheet" href="/assets/theme.css">',
     '<link rel="icon" href="/favicon.svg" type="image/svg+xml">',
     "</head><body>",
@@ -222,12 +250,12 @@ function pushTree(out: string[], nodes: readonly TreeNode[], publicBaseUrl: stri
 
 /** The share page (UI spec §5), including the empty state (§7.1). */
 export function renderSharePage(input: SharePageInput): string {
-  const { token, segments, listing, readme, config, now } = input;
+  const { token, segments, url, listing, readme, config, now } = input;
   const name = segments.at(-1);
   if (name === undefined) throw new TypeError("html: segments must not be empty");
 
   const out: string[] = [];
-  pushPageStart(out, name, config, now);
+  pushPageStart(out, name, config, now, { title: name, url, image: readme?.image ?? null });
   out.push(
     '<main class="main"><section class="hero">',
     `<h1 class="hero__title">${escapeHtml(name)}</h1>`,

@@ -14,6 +14,7 @@ Read-only folder sharing pages for a public [Cloudflare R2](https://developers.c
 - Short URLs without a database: the token is the folder path, obfuscated and Base58-encoded, so it decodes back to the path without any lookup.
 - File links and relative README images point straight at the bucket's public URL. Allowed external images load directly from their hosts. Neither is proxied.
 - Safe README rendering: raw HTML is shown as text, relative links that leave the share or point at hidden files are disabled, and external images are blocked unless their domains are configured.
+- Open Graph metadata for link previews: `og:type`, `og:site_name`, `og:title`, `og:url` and, when the README shows one, `og:image` with its `og:image:alt` from the first visible README image.
 - Optional streaming ZIP of a whole share (STORE, no compression), turned off by default.
 - One dark "Tactical HUD" theme, self-hosted fonts, readable from 360 px wide.
 

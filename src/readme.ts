@@ -47,6 +47,11 @@
  * `####` and deeper -> `<h6>`) and carry `md-h1`…`md-h6` by their ORIGINAL
  * Markdown level for sizing. Tables are wrapped in
  * `<div class="table-scroll">`.
+ *
+ * `renderReadme` also reports the first image it actually emits, with its
+ * plain-text alt, so the page head can use it as `og:image`. Images that are
+ * not shown (unavailable, excluded, non-allowlisted) are skipped, and image
+ * syntax inside code spans or fences counts only as text.
  */
 import MarkdownIt from "markdown-it";
 import type { Env as MarkdownEnv, Token } from "markdown-it";
@@ -75,6 +80,21 @@ export interface Readme {
   readonly filename: string;
   /** Rendered HTML fragment for the README panel body (trusted, already escaped). */
   readonly html: string;
+  /** The first image the panel shows, for the Open Graph preview; `null` when it shows none. */
+  readonly image: ReadmeImage | null;
+}
+
+/** The first image rendered in a README, with its plain-text alt. */
+export interface ReadmeImage {
+  /** Absolute URL, built by `classifyHref` from the R2 public base or an allowed external host. */
+  readonly url: string;
+  readonly alt: string;
+}
+
+export interface RenderedReadme {
+  /** HTML fragment for the README panel body. */
+  readonly html: string;
+  readonly image: ReadmeImage | null;
 }
 
 export interface ReadmeContext {
@@ -113,17 +133,22 @@ export async function loadReadme(bucket: R2Bucket, context: ReadmeContext): Prom
   }
   const bytes = await object.arrayBuffer();
   const markdown = new TextDecoder("utf-8", { fatal: false, ignoreBOM: false }).decode(bytes);
-  return { filename: file.name, html: renderReadme(markdown, context) };
+  return { filename: file.name, ...renderReadme(markdown, context) };
 }
 
-/** Renders README Markdown to an HTML fragment using the policy in the module comment. */
-export function renderReadme(markdown: string, context: ReadmeContext): string {
+/**
+ * Renders README Markdown with the policy in the module comment and reports
+ * the first image it actually shows, so the page head can use it as `og:image`.
+ */
+export function renderReadme(markdown: string, context: ReadmeContext): RenderedReadme {
   const state: RenderState = {
     context,
     shareSegments: shareSegmentsOf(context.listing.prefix),
     openLinks: [],
+    image: null,
   };
-  return md.render(markdown, { [STATE]: state });
+  const html = md.render(markdown, { [STATE]: state });
+  return { html, image: state.image };
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +204,8 @@ interface RenderState {
   readonly shareSegments: readonly string[];
   /** One entry per open link: whether it was rendered as `<span>` instead of `<a>`. */
   readonly openLinks: boolean[];
+  /** First image rendered so far; the image rule only ever fills it in. */
+  image: ReadmeImage | null;
 }
 
 const md = new MarkdownIt("default", {
@@ -248,6 +275,7 @@ rules.image = (tokens, idx, options, env, renderer) => {
   if (verdict.kind === "unavailable" || !allowed) {
     return alt === "" ? "" : `${unavailableOpen()}${escapeHtml(alt)}</span>`;
   }
+  if (state.image === null) state.image = { url: verdict.url, alt };
   return `<img src="${escapeHtml(verdict.url)}" alt="${escapeHtml(alt)}"${titleAttr(token)}>`;
 };
 

@@ -19,6 +19,7 @@ const SEGMENTS = ["releases", "project-a"];
 const PREFIX = "releases/project-a/";
 const BASE = "https://files.example.com";
 const NOW = new Date("2026-10-27T08:05:59Z");
+const PAGE_URL = "https://share.example.com/s/hxR19djQFNp3SS7mNmos88qd/";
 
 function rules(...lines: string[]): Rules {
   const parsed = parseRules(lines.join("\n"), RULES_KEY);
@@ -51,6 +52,7 @@ function page(overrides: Partial<SharePageInput> = {}): string {
   return renderSharePage({
     token: "hxR19djQFNp3SS7mNmos88qd",
     segments: SEGMENTS,
+    url: PAGE_URL,
     listing: listing({ "a.txt": 412 }),
     readme: null,
     config: config(),
@@ -98,7 +100,7 @@ function chrome(overrides: Partial<PageChrome> = {}): PageChrome {
 function allPages(): string[] {
   const custom = chrome({ footerHtml: '<a href="/x">Ops</a>', brandUrl: "/" });
   return [
-    page({ listing: SAMPLE, config: config({ zipEnabled: true, ...custom }), readme: { filename: "README.md", html: "<p>hi</p>" } }),
+    page({ listing: SAMPLE, config: config({ zipEnabled: true, ...custom }), readme: { filename: "README.md", html: "<p>hi</p>", image: null } }),
     page({ listing: listing({}) }),
     renderNotFoundPage(custom, NOW),
     renderNotFoundPage(null, NOW),
@@ -138,9 +140,9 @@ describe("document shell", () => {
     expect(count(html, "<symbol ")).toBe(5);
   });
 
-  it.each(allPages().map((html, i) => [i, html] as const))("page %i only links to the configured public base and the project", (_, html) => {
+  it.each(allPages().map((html, i) => [i, html] as const))("page %i only links to the configured public base, the page URL and the project", (_, html) => {
     const urls = html.match(/https?:\/\/[^"'\s<>]*/g) ?? [];
-    for (const url of urls) expect(url === PROJECT_URL || url.startsWith(`${BASE}/`)).toBe(true);
+    for (const url of urls) expect(url === PROJECT_URL || url === PAGE_URL || url.startsWith(`${BASE}/`)).toBe(true);
   });
 
   it("shows the brand, not as a link, and the sync time", () => {
@@ -365,7 +367,7 @@ describe("renderSharePage", () => {
 
     it("shows the actual file name in an h2 and inserts the rendered HTML as is", () => {
       const readmeHtml = '<h3 class="md-h1">Hi</h3><div class="table-scroll"><table></table></div><span class="unavailable" title="Not available in this share">x</span>';
-      const html = page({ readme: { filename: ".README.md", html: readmeHtml } });
+      const html = page({ readme: { filename: ".README.md", html: readmeHtml, image: null } });
       expect(html).toContain(
         '<section class="panel panel--readme" aria-labelledby="readme-title"><div class="panel__head">' +
           '<h2 class="panel__title" id="readme-title">.README.md</h2></div>' +
@@ -375,8 +377,46 @@ describe("renderSharePage", () => {
     });
 
     it("escapes the file name", () => {
-      const html = page({ readme: { filename: `<R&"'>.md`, html: "" } });
+      const html = page({ readme: { filename: `<R&"'>.md`, html: "", image: null } });
       expect(html).toContain('id="readme-title">&lt;R&amp;&quot;&#39;&gt;.md</h2>');
+    });
+  });
+
+  describe("Open Graph", () => {
+    const image = { url: `${BASE}/releases/project-a/img/logo.png?a=1&b=2`, alt: 'The "logo" & mark' };
+
+    it("describes the share page, escaped, inside the head", () => {
+      const html = page({ config: config({ brandName: "Jim's <Files>" }), readme: { filename: "README.md", html: "", image } });
+      expect(html).toContain(
+        '<meta property="og:type" content="website">' +
+          '<meta property="og:site_name" content="Jim&#39;s &lt;Files&gt;">' +
+          '<meta property="og:title" content="project-a">' +
+          '<meta property="og:url" content="https://share.example.com/s/hxR19djQFNp3SS7mNmos88qd/">' +
+          `<meta property="og:image" content="${BASE}/releases/project-a/img/logo.png?a=1&amp;b=2">` +
+          '<meta property="og:image:alt" content="The &quot;logo&quot; &amp; mark">',
+      );
+      expect(html.indexOf('property="og:image"')).toBeLessThan(html.indexOf("</head>"));
+      expect(html.indexOf("<title>")).toBeLessThan(html.indexOf('property="og:type"'));
+    });
+
+    it("omits og:image and og:image:alt without a README image", () => {
+      for (const readme of [null, { filename: "README.md", html: "", image: null }]) {
+        const html = page({ readme });
+        expect(html).toContain('<meta property="og:url" content="https://share.example.com/s/hxR19djQFNp3SS7mNmos88qd/">');
+        expect(html).not.toContain('property="og:image"');
+      }
+    });
+
+    it("omits an empty alt", () => {
+      const html = page({ readme: { filename: "README.md", html: "", image: { url: `${BASE}/x.png`, alt: "" } } });
+      expect(html).toContain('<meta property="og:image" content="https://files.example.com/x.png">');
+      expect(html).not.toContain("og:image:alt");
+    });
+
+    it("is absent from the 404 and error pages", () => {
+      for (const html of [renderNotFoundPage(chrome(), NOW), renderErrorPage(null, NOW)]) {
+        expect(html).not.toContain('property="og:');
+      }
     });
   });
 });

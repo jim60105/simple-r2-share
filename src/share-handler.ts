@@ -154,7 +154,7 @@ export async function handleShareRequest(request: Request, env: Env, now: Date =
   let config: AppConfig | null = null;
   try {
     config = loadConfig(env);
-    const outcome = await resolveShare(new URL(request.url).pathname, env.BUCKET, config, now);
+    const outcome = await resolveShare(new URL(request.url), env.BUCKET, config, now);
     switch (outcome.kind) {
       case "page":
         return htmlResponse(200, outcome.html, config, head);
@@ -172,7 +172,8 @@ export async function handleShareRequest(request: Request, env: Env, now: Date =
   }
 }
 
-async function resolveShare(pathname: string, bucket: R2Bucket, config: AppConfig, now: Date): Promise<Outcome> {
+async function resolveShare(url: URL, bucket: R2Bucket, config: AppConfig, now: Date): Promise<Outcome> {
+  const pathname = url.pathname;
   const token = parseShortSharePath(pathname);
   if (token === null) {
     const withSlash = pathname.endsWith("/") ? null : parseShortSharePath(`${pathname}/`);
@@ -192,5 +193,7 @@ async function resolveShare(pathname: string, bucket: R2Bucket, config: AppConfi
   const readme = await loadReadme(bucket, {
     listing, rules, publicBaseUrl: config.publicBaseUrl, readmeImageDomains: config.readmeImageDomains,
   });
-  return { kind: "page", html: renderSharePage({ token, segments, listing, readme, config, now }) };
+  // Ignore any query and fragment: the canonical page is the bare share path.
+  const pageUrl = new URL(shortSharePath(token), url).toString();
+  return { kind: "page", html: renderSharePage({ token, segments, url: pageUrl, listing, readme, config, now }) };
 }

@@ -104,7 +104,8 @@ describe("authorised share", () => {
   });
 
   it("renders the tree and README with 200", async () => {
-    const { response, body } = await get(seededBucket(), share("releases", "project-a"));
+    const path = share("releases", "project-a");
+    const { response, body } = await get(seededBucket(), path);
     expect(response.status).toBe(200);
     expectCommonHeaders(response);
     expect(response.headers.get("Content-Security-Policy")).toContain(`img-src 'self' ${PUBLIC_BASE}`);
@@ -113,9 +114,20 @@ describe("authorised share", () => {
     expect(body).toContain(`href="${PUBLIC_BASE}/releases/project-a/sub/notes.txt"`);
     expect(body).toContain('<h2 class="panel__title" id="readme-title">README.md</h2>');
     expect(body).toContain(`src="${PUBLIC_BASE}/releases/project-a/img/shot.png"`);
+    expect(body).toContain(`<meta property="og:url" content="${ORIGIN}${path}">`);
+    expect(body).toContain(`<meta property="og:image" content="${PUBLIC_BASE}/releases/project-a/img/shot.png">`);
+    expect(body).toContain('<meta property="og:image:alt" content="shot">');
     expect(body).not.toContain("project-a2");
     expect(body).not.toContain(".r2-share-rules");
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps the bare share path as og:url when the request has a query", async () => {
+    const path = share("releases", "project-a");
+    const { response, body } = await get(seededBucket(), `${path}?utm_source=feed`);
+    expect(response.status).toBe(200);
+    expect(body).toContain(`<meta property="og:url" content="${ORIGIN}${path}">`);
+    expect(body).not.toContain("utm_source");
   });
 
   it("lists only below the share root", async () => {

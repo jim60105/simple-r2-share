@@ -66,7 +66,12 @@ const FILES = [
 const CONTEXT = contextWith(FILES);
 
 function render(markdown: string, context: ReadmeContext = CONTEXT): string {
-  return renderReadme(markdown, context);
+  return renderReadme(markdown, context).html;
+}
+
+/** The image the page head would use as `og:image`. */
+function imageOf(markdown: string, context: ReadmeContext = CONTEXT) {
+  return renderReadme(markdown, context).image;
 }
 
 function unavailable(inner: string): string {
@@ -116,13 +121,23 @@ describe("loadReadme", () => {
   it("reads and renders README.md and reports the filename", async () => {
     const { fake, context } = await setup({ "README.md": "# Hello", ".README.md": "# Hidden" });
     const readme = await loadReadme(fake.asR2Bucket(), context);
-    expect(readme).toEqual({ filename: "README.md", html: '<h3 class="md-h1">Hello</h3>\n' });
+    expect(readme).toEqual({ filename: "README.md", html: '<h3 class="md-h1">Hello</h3>\n', image: null });
     expect(fake.getCalls).toEqual([`${PREFIX}README.md`]);
   });
 
   it("uses .README.md when README.md is missing", async () => {
     const { fake, context } = await setup({ ".README.md": "hi", "docs/README.md": "no" });
-    expect(await loadReadme(fake.asR2Bucket(), context)).toEqual({ filename: ".README.md", html: "<p>hi</p>\n" });
+    expect(await loadReadme(fake.asR2Bucket(), context)).toEqual({ filename: ".README.md", html: "<p>hi</p>\n", image: null });
+  });
+
+  it("reports the first image it shows for the Open Graph preview", async () => {
+    const { fake, context } = await setup({ "README.md": "![The logo](img/logo.png)\n\n![Second](top.txt)", "img/logo.png": "png", "top.txt": "t" });
+    expect(await loadReadme(fake.asR2Bucket(), context)).toEqual({
+      filename: "README.md",
+      html: `<p><img src="${BASE}/releases/project-a/img/logo.png" alt="The logo"></p>\n` +
+        `<p><img src="${BASE}/releases/project-a/top.txt" alt="Second"></p>\n`,
+      image: { url: `${BASE}/releases/project-a/img/logo.png`, alt: "The logo" },
+    });
   });
 
   it("returns null without touching R2 when there is no README", async () => {
@@ -297,6 +312,56 @@ describe("absolute links", () => {
 });
 
 describe("images", () => {
+  describe("image selected for the page head", () => {
+    it("is the first displayed image, not the first Markdown image", () => {
+      expect(imageOf("![missing](img/missing.png)\n\n![logo *one*](img/logo.png)\n\n![two](top.txt)")).toEqual({
+        url: `${BASE}/releases/project-a/img/logo.png`,
+        alt: "logo one",
+      });
+    });
+
+    it("ignores image syntax inside code spans and fences", () => {
+      expect(imageOf("`![x](img/logo.png)`\n\n```\n![y](img/logo.png)\n```")).toBeNull();
+    });
+
+    it("finds a reference-style image and an image inside a link", () => {
+      expect(imageOf("![ref][logo]\n\n[logo]: img/logo.png")).toEqual({
+        url: `${BASE}/releases/project-a/img/logo.png`,
+        alt: "ref",
+      });
+      expect(imageOf("[![logo](img/logo.png)](https://example.com)")).toEqual({
+        url: `${BASE}/releases/project-a/img/logo.png`,
+        alt: "logo",
+      });
+    });
+
+    it("is null without an image", () => {
+      expect(imageOf("just text")).toBeNull();
+      expect(imageOf("![blocked](https://example.com/i.png)")).toBeNull();
+    });
+
+    it("skips a blocked external image before an allowed one", () => {
+      const context = { ...CONTEXT, readmeImageDomains: ["images.example.com"] };
+      expect(imageOf("![blocked](https://evil.example/i.png)\n\n![ext](https://images.example.com/a.png)", context)).toEqual({
+        url: "https://images.example.com/a.png",
+        alt: "ext",
+      });
+    });
+
+    it("uses an allowlisted external HTTPS image", () => {
+      const context = { ...CONTEXT, readmeImageDomains: ["images.example.com"] };
+      expect(imageOf("![ext](https://images.example.com/a.png)", context)).toEqual({
+        url: "https://images.example.com/a.png",
+        alt: "ext",
+      });
+    });
+
+    it("is per render, not shared between READMEs", () => {
+      expect(imageOf("![a](img/logo.png)")).toEqual({ url: `${BASE}/releases/project-a/img/logo.png`, alt: "a" });
+      expect(imageOf("text")).toBeNull();
+    });
+  });
+
   it("shows relative images from the public R2 URL", () => {
     expect(render('![The logo](img/logo.png "Logo")')).toBe(
       `<p><img src="${BASE}/releases/project-a/img/logo.png" alt="The logo" title="Logo"></p>\n`,
