@@ -22,14 +22,9 @@
   --frow-gap: var(--space-6);
   --frow-pad-left: calc(var(--panel-pad) + var(--space-1));
   --frow-pad-right: var(--panel-pad);
-  /* Room the fixed action bar takes at the bottom of the page. */
+  /* Room the fixed action bar takes at the bottom of the page, safe area
+   * included; main.ts replaces it with the measured height. */
   --actionbar-space: 76px;
-}
-
-@media (max-width: 560px) {
-  :root {
-    --actionbar-space: 136px;
-  }
 }
 
 [hidden] {
@@ -54,7 +49,7 @@
 }
 
 body.has-actionbar {
-  padding-bottom: calc(var(--actionbar-space) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: var(--actionbar-space);
 }
 
 /* ===== Tags ===== */
@@ -231,6 +226,7 @@ button.button:disabled {
 /* ===== FOLDERS panel (§6.4) ===== */
 .folders-head {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
 }
 
@@ -554,6 +550,10 @@ button.button:disabled {
   color: var(--muted);
 }
 
+.actionbar__note:not(:empty)::before {
+  content: "· ";
+}
+
 .actionbar__buttons {
   display: flex;
   gap: var(--space-3);
@@ -570,7 +570,7 @@ button.button:disabled {
 }
 
 body.has-actionbar .toast-region {
-  bottom: calc(var(--actionbar-space) + var(--space-4) + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--actionbar-space) + var(--space-4));
 }
 
 .toast {
@@ -736,6 +736,15 @@ body.has-actionbar .toast-region {
 
   .actionbar__inner {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .actionbar__note {
+    display: block;
+  }
+
+  .actionbar__note::before {
+    content: none !important;
   }
 
   .actionbar__buttons {
