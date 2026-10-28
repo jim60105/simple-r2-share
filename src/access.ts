@@ -38,22 +38,23 @@ const TEAM_HOST = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.cloudflareaccess\.com$/;
 
 /**
  * The Access settings, or `null` when either is missing or malformed (the
- * admin API then refuses everything). `ACCESS_TEAM_DOMAIN` must be an
- * `https://<team>.cloudflareaccess.com` origin; one trailing `/` is accepted.
+ * admin API then refuses everything). `ACCESS_TEAM_DOMAIN` must be a
+ * `<team>.cloudflareaccess.com` hostname with optional `https://` and one trailing `/`.
  */
 export function loadAccessConfig(env: Pick<Env, "ACCESS_TEAM_DOMAIN" | "ACCESS_AUD">): AccessConfig | null {
   const raw = env.ACCESS_TEAM_DOMAIN?.trim();
   const aud = env.ACCESS_AUD?.trim();
   if (!raw || !aud) return null;
+  const origin = raw.startsWith("https://") ? raw : `https://${raw}`;
   let url: URL;
   try {
-    url = new URL(raw);
+    url = new URL(origin);
   } catch {
     return null;
   }
   // Comparing with the origin rules out credentials, a path, a query and a fragment.
   if (url.protocol !== "https:" || !TEAM_HOST.test(url.hostname) || url.port !== "") return null;
-  if (raw.replace(/\/$/, "") !== url.origin) return null;
+  if (origin.replace(/\/$/, "") !== url.origin) return null;
   return { teamDomain: url.origin, aud };
 }
 

@@ -62,7 +62,7 @@ GET /s/hxR19djQFNp3SS7mNmos88qd/
 | `FOOTER_HTML` | 否 | 單行 HTML 內容，會以**不跳脫**形式渲染在所有頁面的 `<footer>` 內，包含 404 與錯誤頁面。每個頁面的頁尾結尾固定顯示 `Powered by Simple R2 Share`，並連結至本專案；設定 `FOOTER_HTML` 時，其內容會排在前面，並以 ` • ` 分隔。留空或未設定時只顯示這段標示。此欄位視同程式碼，僅限網站管理員設定。頁面的 Content-Security-Policy 仍然有效，因此行內 `<script>` 與其他網站的腳本無法執行，`<style>` 標籤與外部樣式表會被阻擋，字型僅限從本站載入，圖片僅限從本站、`R2_PUBLIC_BASE_URL` 來源或 `README_IMAGE_DOMAINS` 中的 HTTPS 主機載入。行內 `style="…"` 屬性與一般連結可正常運作。Cloudflare 對單一環境變數設有 5 KB 限制。 |
 | `BRAND_NAME` | 否 | 左上角品牌名稱的文字，同時作為頁面標題的後綴。以純文字處理並經過跳脫。預設為 `SIMPLE R2 SHARE`（數值留空時亦套用預設值）。 |
 | `BRAND_URL` | 否 | 點擊左上角品牌名稱時前往的連結，例如 `https://example.com/`。留空或未設定表示品牌名稱不設連結。 |
-| `ACCESS_TEAM_DOMAIN` | 使用管理頁時必填 | Cloudflare Zero Trust 的 team domain，格式必須是 `https://<team-name>.cloudflareaccess.com`。用來取得 Access 簽章公鑰並比對 token 的簽發者。未設定時，所有管理 API 請求都回傳 `403`。 |
+| `ACCESS_TEAM_DOMAIN` | 使用管理頁時必填 | Cloudflare Zero Trust 的 team domain，格式為 `<team-name>.cloudflareaccess.com`，可選擇加上 `https://`。用來透過 HTTPS 取得 Access 簽章公鑰並比對 token 的簽發者。未設定時，所有管理 API 請求都回傳 `403`。 |
 | `ACCESS_AUD` | 使用管理頁時必填 | 保護管理頁的 Access 應用程式的 Application Audience（AUD）tag。未設定時，所有管理 API 請求都回傳 `403`。 |
 
 ### 控制台設定
@@ -102,7 +102,7 @@ GET /s/hxR19djQFNp3SS7mNmos88qd/
 2. 為**每個提供本站的主機名稱**加入公開主機名稱與路徑：自訂網域、`<project>.pages.dev`，以及預覽部署使用的 `*.<project>.pages.dev`。每個主機名稱都要加入 `admin`、`admin/*` 與 `api/admin/*` 三個路徑。
 3. 加入一條 **Allow** 政策，只讓可以編輯規則的人通過，例如列出他們的電子郵件地址。
 4. 儲存後，從應用程式總覽頁複製 **Application Audience (AUD) Tag**。
-5. 在 Pages 專案的正式環境與 Preview 環境變數中設定 `ACCESS_TEAM_DOMAIN`（Zero Trust 的 team domain，`<team-name>.cloudflareaccess.com`，前面加上 `https://`）與 `ACCESS_AUD`，然後重新部署。
+5. 在 Pages 專案的正式環境與 Preview 環境變數中設定 `ACCESS_TEAM_DOMAIN`（Zero Trust 的 team domain，`<team-name>.cloudflareaccess.com`，可選擇加上 `https://`）與 `ACCESS_AUD`，然後重新部署。
 
 **Sign out** 連到 `/cdn-cgi/access/logout`。Access 身分只用來判斷請求能否使用本站自己的 R2 綁定，不會轉換成任何 R2 權限，API 也只能寫入規則檔案。
 

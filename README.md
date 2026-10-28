@@ -62,7 +62,7 @@ In production, every setting lives in the Cloudflare dashboard, allowing deploym
 | `FOOTER_HTML` | no | One line of HTML rendered **unescaped** in a `<footer>` on every page, including 404 and error pages. Every page's footer ends with `Powered by Simple R2 Share`, linking to this project; when `FOOTER_HTML` is set, it comes first, followed by ` • `. Empty or unset means only the credit shows. Treat it as code: only the site admin should be able to set it. The page's Content-Security-Policy still applies, so inline `<script>` and scripts from other sites don't run, `<style>` elements and external stylesheets are blocked, fonts load only from this site, and images load only from this site, the `R2_PUBLIC_BASE_URL` origin or HTTPS hosts in `README_IMAGE_DOMAINS`. Inline `style="…"` attributes and ordinary links work. Cloudflare limits a variable to 5 KB. |
 | `BRAND_NAME` | no | Text of the brand in the top-left corner, also used as the page title suffix. Plain text, escaped. Default `SIMPLE R2 SHARE` (also used when the value is empty). |
 | `BRAND_URL` | no | Link target of the top-left brand, such as `https://example.com/`. Empty or unset means the brand is not a link. |
-| `ACCESS_TEAM_DOMAIN` | for the admin page | Your Cloudflare Zero Trust team domain, exactly `https://<team-name>.cloudflareaccess.com`. Used to fetch Access signing keys and to check the token issuer. Unset means every admin API request gets `403`. |
+| `ACCESS_TEAM_DOMAIN` | for the admin page | Your Cloudflare Zero Trust team domain, `<team-name>.cloudflareaccess.com`, optionally prefixed with `https://`. Used to fetch Access signing keys over HTTPS and to check the token issuer. Unset means every admin API request gets `403`. |
 | `ACCESS_AUD` | for the admin page | The Application Audience (AUD) tag of the Access application that protects the admin page. Unset means every admin API request gets `403`. |
 
 ### Dashboard settings
@@ -102,7 +102,7 @@ Every admin API call checks the Access token on the server, so the admin page on
 2. Add these public hostnames and paths for **every hostname that serves the site**: the custom domain, `<project>.pages.dev`, and `*.<project>.pages.dev` for preview deployments. For each hostname, add the paths `admin`, `admin/*` and `api/admin/*`.
 3. Add an **Allow** policy that matches only the people who may edit the rules, for example their emails.
 4. Save, then copy the application's **Application Audience (AUD) Tag** from its overview.
-5. Set `ACCESS_TEAM_DOMAIN` (your Zero Trust team domain, `<team-name>.cloudflareaccess.com`, written with `https://`) and `ACCESS_AUD` in the Pages project's Production and Preview variables, then redeploy.
+5. Set `ACCESS_TEAM_DOMAIN` (your Zero Trust team domain, `<team-name>.cloudflareaccess.com`, with or without `https://`) and `ACCESS_AUD` in the Pages project's Production and Preview variables, then redeploy.
 
 **Sign out** goes to `/cdn-cgi/access/logout`. The Access identity only decides whether a request may use the site's own R2 binding. It doesn't grant any R2 permission, and the API can only write the rules file.
 

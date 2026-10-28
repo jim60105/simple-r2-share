@@ -82,6 +82,9 @@ describe("loadAccessConfig", () => {
     [TEAM, TEAM],
     [`${TEAM}/`, TEAM],
     [` ${TEAM} `, TEAM],
+    ["myteam.cloudflareaccess.com", TEAM],
+    ["myteam.cloudflareaccess.com/", TEAM],
+    [" myteam.cloudflareaccess.com ", TEAM],
   ])("accepts %j", (domain, expected) => {
     expect(loadAccessConfig({ ACCESS_TEAM_DOMAIN: domain, ACCESS_AUD: AUD })).toEqual({ teamDomain: expected, aud: AUD });
   });
@@ -92,7 +95,12 @@ describe("loadAccessConfig", () => {
     ["missing aud", TEAM, undefined],
     ["blank aud", TEAM, "  "],
     ["http", "http://myteam.cloudflareaccess.com", AUD],
-    ["no scheme", "myteam.cloudflareaccess.com", AUD],
+    ["bare path", "myteam.cloudflareaccess.com/path", AUD],
+    ["bare query", "myteam.cloudflareaccess.com?x=1", AUD],
+    ["bare fragment", "myteam.cloudflareaccess.com#x", AUD],
+    ["bare port", "myteam.cloudflareaccess.com:443", AUD],
+    ["bare credentials", "u:p@myteam.cloudflareaccess.com", AUD],
+    ["other scheme", "ftp://myteam.cloudflareaccess.com", AUD],
     ["other host", "https://myteam.example.com", AUD],
     ["lookalike host", "https://myteam.cloudflareaccess.com.evil.example", AUD],
     ["bare suffix", "https://cloudflareaccess.com", AUD],
@@ -303,6 +311,11 @@ describe("authenticateAdmin", () => {
 
   it("lets a GET with a valid token through", async () => {
     expect(await authenticateAdmin(await request("GET"), ENV, keys, NOW)).toEqual({ email: "admin@example.com" });
+  });
+
+  it("authenticates a valid token with a scheme-less team domain", async () => {
+    const env = { ACCESS_TEAM_DOMAIN: "myteam.cloudflareaccess.com", ACCESS_AUD: AUD } as Env;
+    expect(await authenticateAdmin(await request("GET"), env, keys, NOW)).toEqual({ email: "admin@example.com" });
   });
 
   it("lets a same-origin JSON PUT through", async () => {
