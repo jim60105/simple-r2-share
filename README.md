@@ -2,12 +2,14 @@
 
 [[English](README.md) | [正體中文](README.zh.md)]
 
-Read-only folder sharing pages for a public [Cloudflare R2](https://developers.cloudflare.com/r2/) bucket, served by Cloudflare Pages Functions. The folders to share are listed in one rules file at the bucket root. Each shared folder gets a page at `/share/<folder>/` with an expandable file tree, links to the files on the bucket's existing public URL, and the folder's `README.md` rendered underneath. A "Download all" ZIP button is optional. Every page is built from the bucket's current contents on each request, so there is nothing to publish or rebuild when files or rules change.
+Read-only folder sharing pages for a public [Cloudflare R2](https://developers.cloudflare.com/r2/) bucket, served by Cloudflare Pages Functions. The folders to share are listed in one rules file at the bucket root, which an admin page behind Cloudflare Access edits as a folder tree. Each shared folder gets a short URL `/s/<token>/` with an expandable file tree, links to the files on the bucket's existing public URL, and the folder's `README.md` rendered underneath. A "Download all" ZIP button is optional. Every page is built from the bucket's current contents on each request, so there is nothing to publish or rebuild when files or rules change.
 
 **Features**
 
-- Server-rendered HTML: no JavaScript of its own, no external requests. The Content-Security-Policy still allows same-origin scripts, so Cloudflare features that inject `/cdn-cgi/scripts/…`, such as Email Address Obfuscation, keep working. Folders use native `<details>`, so they expand and collapse without scripts.
+- Server-rendered share pages: no JavaScript of their own, no external requests. The Content-Security-Policy still allows same-origin scripts, so Cloudflare features that inject `/cdn-cgi/scripts/…`, such as Email Address Obfuscation, keep working. Folders use native `<details>`, so they expand and collapse without scripts.
 - Allowlist rules file in a `.gitignore`-like syntax (inverted: nothing is shared unless a rule allows it). `!` rules hide folders and files.
+- [Admin page](#admin-page) at `/admin/`: browse the bucket's folders, set each one to Inherit, Share, Share + subfolders or Exclude, see what will change before saving, and copy a folder's short URL. Protected by Cloudflare Access and checked again on the server.
+- Short URLs without a database: the token is the folder path, obfuscated and Base58-encoded, so it decodes back to the path without any lookup.
 - File links and README images point straight at the bucket's public URL. They are not proxied.
 - Safe README rendering: raw HTML is shown as text, relative links that leave the share or point at hidden files are disabled, and external images are blocked.
 - Optional streaming ZIP of a whole share (STORE, no compression), turned off by default.
@@ -15,14 +17,15 @@ Read-only folder sharing pages for a public [Cloudflare R2](https://developers.c
 
 **Non-goals**
 
-- No uploads, admin UI, logins, passwords, tokens or download limits. Everything is read-only.
+- No uploads, file deletion, user accounts, passwords or download limits. Visitors only read; the admin page can only rewrite the rules file.
+- Short URLs are not secret. Anyone can turn a token back into the folder path, and every request is still checked against the rules.
 - No access control on the bucket. The share rules only control what this site lists and zips. **Every object stays directly reachable on the bucket's public URL**, including hidden files and the rules file itself, for anyone who knows or guesses the URL. Don't put anything secret in the bucket.
 
 ## How it works
 
 ```text
-GET /share/releases/project-a/
-  → validate the path (one decode per segment; `..`, `%2F`, `%5C`, double encoding, … → 404)
+GET /s/hxR19djQFNp3SS7mNmos88qd/
+  → decode the token to `releases/project-a`   (not Base58, bad UTF-8, `..`, control characters, … → 404)
   → read the rules file from R2   (missing or invalid → nothing is shared)
   → is `releases/project-a` an allowed share root?   no → 404
   → list `releases/project-a/` with R2 list(), following the cursor
@@ -32,10 +35,12 @@ GET /share/releases/project-a/
 
 | URL | What it does |
 | --- | --- |
-| `/share/<dir>/` | Share page for the bucket folder `<dir>`, for example `/share/releases/project-a/`. Each path segment is percent-encoded once (`/share/releases/%E5%B0%88%E6%A1%88/`). Without the trailing `/` the server responds with a `308` redirect to it. |
-| `/api/share-zip?dir=<dir>` | ZIP of the same share, for example `/api/share-zip?dir=releases%2Fproject-a`. Gives `404` unless `ENABLE_ZIP_DOWNLOAD` is `"true"`, and also for any share that the page would `404` on or that has no files. The archive is named after the folder (`project-a.zip`). |
+| `/s/<token>/` | Share page for the bucket folder that the token encodes, for example `/s/hxR19djQFNp3SS7mNmos88qd/` for `releases/project-a`. Copy it from the admin page, or print it with `npm run share-url`. Without the trailing `/` the server responds with a `308` redirect to it. |
+| `/api/share-zip?token=<token>` | ZIP of the same share. Gives `404` unless `ENABLE_ZIP_DOWNLOAD` is `"true"`, and also for any share that the page would `404` on or that has no files. The archive is named after the folder (`project-a.zip`). |
+| `/admin/` | The [admin page](#admin-page). Only reachable through Cloudflare Access. |
+| `/api/admin/rules`, `/api/admin/folders` | The admin page's API. Every request needs a valid Cloudflare Access token, or it gets `403`. |
 
-Every share that doesn't exist, isn't allowed, is excluded, or has an invalid URL gets the same `404` page, so a visitor can't tell which reason applied. R2 errors and invalid settings get a generic error page (`500`). The details are only written to the Functions log. Methods other than `GET` and `HEAD` get `405`.
+Every share that doesn't exist, isn't allowed, is excluded, or has an invalid token gets the same `404` page, so a visitor can't tell which reason applied. R2 errors and invalid settings get a generic error page (`500`). The details are only written to the Functions log. Methods other than `GET` and `HEAD` get `405`.
 
 ## Requirements
 
@@ -56,6 +61,8 @@ In production, every setting lives in the Cloudflare dashboard, allowing deploym
 | `FOOTER_HTML` | no | One line of HTML rendered **unescaped** in a `<footer>` on every page, including 404 and error pages. Every page's footer ends with `Powered by Simple R2 Share`, linking to this project; when `FOOTER_HTML` is set, it comes first, followed by ` • `. Empty or unset means only the credit shows. Treat it as code: only the site admin should be able to set it. The page's Content-Security-Policy still applies, so inline `<script>` and scripts from other sites don't run, `<style>` elements and external stylesheets are blocked, fonts load only from this site, and images load only from this site or the `R2_PUBLIC_BASE_URL` origin. Inline `style="…"` attributes and ordinary links work. Cloudflare limits a variable to 5 KB. |
 | `BRAND_NAME` | no | Text of the brand in the top-left corner, also used as the page title suffix. Plain text, escaped. Default `SIMPLE R2 SHARE` (also used when the value is empty). |
 | `BRAND_URL` | no | Link target of the top-left brand, such as `https://example.com/`. Empty or unset means the brand is not a link. |
+| `ACCESS_TEAM_DOMAIN` | for the admin page | Your Cloudflare Zero Trust team domain, exactly `https://<team-name>.cloudflareaccess.com`. Used to fetch Access signing keys and to check the token issuer. Unset means every admin API request gets `403`. |
+| `ACCESS_AUD` | for the admin page | The Application Audience (AUD) tag of the Access application that protects the admin page. Unset means every admin API request gets `403`. |
 
 ### Dashboard settings
 
@@ -75,9 +82,34 @@ The committed `wrangler.toml` deliberately has no `pages_build_output_dir` key, 
 
 Changes to R2 objects and to the rules file **do not** need a deployment. The next request sees them.
 
+## Admin page
+
+`/admin/` shows the bucket's folders as a tree, loading one level at a time. Each folder has four rule buttons:
+
+| Button | Rule written | Meaning |
+| --- | --- | --- |
+| Inherit | none | Decided by the folder's ancestors |
+| Share | `folder/` | The folder gets a share page |
+| Share + subfolders | `folder/**` | The folder and every subfolder not excluded get share pages |
+| Exclude | `!folder/` | The folder and everything in it are hidden |
+
+Changes stay in the browser until you press **SAVE**: the buttons show the saved state, what changes (outlined) and the new state (amber), and the folder icons show the result. The copy button next to a shared folder puts its short URL on the clipboard. The page writes the rules file in a fixed, sorted format; rules it can't show as a button (globs such as `!**/*.tmp`, rules without a trailing `/`) are listed in a warning and **removed on the next save**. If someone saved in the meantime, saving is refused and the page asks you to reload.
+
+Every admin API call checks the Access token on the server, so the admin page only works behind a Cloudflare Access application:
+
+1. In [Cloudflare One](https://one.dash.cloudflare.com/), go to **Access** > **Applications** > **Add an application** > **Self-hosted**.
+2. Add these public hostnames and paths for **every hostname that serves the site**: the custom domain, `<project>.pages.dev`, and `*.<project>.pages.dev` for preview deployments. For each hostname, add the paths `admin`, `admin/*` and `api/admin/*`.
+3. Add an **Allow** policy that matches only the people who may edit the rules, for example their emails.
+4. Save, then copy the application's **Application Audience (AUD) Tag** from its overview.
+5. Set `ACCESS_TEAM_DOMAIN` (your Zero Trust team domain, `<team-name>.cloudflareaccess.com`, written with `https://`) and `ACCESS_AUD` in the Pages project's Production and Preview variables, then redeploy.
+
+**Sign out** goes to `/cdn-cgi/access/logout`. The Access identity only decides whether a request may use the site's own R2 binding. It doesn't grant any R2 permission, and the API can only write the rules file.
+
+Without these two variables the admin API answers `403` to everything, which is also what happens under `npm run dev`. Use `npm run share-url -- <folder>` locally to get a share URL.
+
 ## Rules file
 
-`.r2-share-rules` (or the configured `SHARE_RULES_KEY`) is one UTF-8 text object at the bucket root, edited only by the admin. Nothing is shared until a rule allows it.
+`.r2-share-rules` (or the configured `SHARE_RULES_KEY`) is one UTF-8 text object at the bucket root, normally maintained with the [admin page](#admin-page). Nothing is shared until a rule allows it. The full syntax below still applies when you write the file by hand, but the admin page removes rules it can't represent the next time it saves.
 
 ```gitignore
 # Share exactly this folder (with everything below it on one page)
@@ -92,13 +124,13 @@ releases/project-b/**
 
 With this file:
 
-| URL | Result |
+| Share URL of the folder | Result |
 | --- | --- |
-| `/share/releases/project-a/` | Page listing every file under `releases/project-a/`, at any depth |
-| `/share/releases/project-a/docs/` | `404`. An exact rule doesn't give subfolders their own page. |
-| `/share/releases/project-a2/` | `404`. Rules compare whole path segments, so `project-a` doesn't match `project-a2`. |
-| `/share/releases/project-b/` and `/share/releases/project-b/sub/` | Pages, without anything under `private/` |
-| `/share/releases/project-b/private/` | `404` |
+| `releases/project-a` | Page listing every file under `releases/project-a/`, at any depth |
+| `releases/project-a/docs` | `404`. An exact rule doesn't give subfolders their own page. |
+| `releases/project-a2` | `404`. Rules compare whole path segments, so `project-a` doesn't match `project-a2`. |
+| `releases/project-b` and `releases/project-b/sub` | Pages, without anything under `private/` |
+| `releases/project-b/private` | `404` |
 
 **Syntax**
 
@@ -133,7 +165,7 @@ npx wrangler r2 object put <bucket-name>/.r2-share-rules --file ./r2-share-rules
 
 Deploying requires no edits to any file in this repository. The project name, the bucket and the variables are all set in the Cloudflare dashboard.
 
-The build (`npm run build`, i.e. `scripts/build-fonts.mjs`) downloads the pinned Jim Mono TC web font release from GitHub, checks its SHA-256 (a mismatch fails the build), and writes `public/fonts/` together with Chakra Petch from `@fontsource/chakra-petch`. `public/fonts/` is generated and git-ignored. The Pages Functions in `functions/` are bundled by Pages itself.
+The build (`npm run build`) runs two scripts. `scripts/build-fonts.mjs` downloads the pinned Jim Mono TC web font release from GitHub, checks its SHA-256 (a mismatch fails the build), and writes `public/fonts/` together with Chakra Petch from `@fontsource/chakra-petch`. `scripts/build-admin.mjs` bundles the admin page script into `public/admin/app.js` with esbuild and collects the licenses of the bundled packages into `public/admin/THIRD_PARTY_LICENSES.txt`. These generated files are git-ignored. The Pages Functions in `functions/` are bundled by Pages itself.
 
 ### Option A: Git integration
 
@@ -165,14 +197,14 @@ Wrangler prints a warning that `wrangler.toml` has no `pages_build_output_dir` a
 
 ### After the first deploy
 
-1. Upload the rules file (see [Rules file](#rules-file)).
+1. Set up [Cloudflare Access for the admin page](#admin-page), then open `/admin/` and save the first rules. Uploading a rules file with Wrangler (see [Rules file](#rules-file)) works too.
 2. Go through the [post-deploy checklist](#post-deploy-checklist).
 
 ## Local development
 
 ```sh
 npm ci
-npm run build            # fonts → public/fonts/ (cached in node_modules/.cache/)
+npm run build            # fonts → public/fonts/ (cached in node_modules/.cache/), admin script → public/admin/
 npm run dev              # wrangler pages dev → http://localhost:8788
 ```
 
@@ -183,22 +215,28 @@ npx wrangler r2 object put <bucket-name>/.r2-share-rules --file ./rules.txt --lo
 npx wrangler r2 object put <bucket-name>/releases/project-a/README.md --file ./README.md --local
 ```
 
-Then open `http://localhost:8788/share/releases/project-a/`. File links and README images still point at `R2_PUBLIC_BASE_URL`, because the local bucket isn't served publicly. Use `.dev.vars` to change variables locally (for example `ENABLE_ZIP_DOWNLOAD="true"`).
+Then print the folder's local share URL and open it:
+
+```sh
+npm run share-url -- releases/project-a      # → http://localhost:8788/s/hxR19djQFNp3SS7mNmos88qd/
+```
+
+File links and README images still point at `R2_PUBLIC_BASE_URL`, because the local bucket isn't served publicly. Use `.dev.vars` to change variables locally (for example `ENABLE_ZIP_DOWNLOAD="true"`). The admin API answers `403` locally because there is no Cloudflare Access; there is deliberately no switch to turn that check off. After a change to `src/admin/`, run `npm run build` again.
 
 Behind an HTTP proxy that Node's `fetch` doesn't pick up, run the build with `NODE_USE_ENV_PROXY=1` (Node ≥ 22.21).
 
 ```sh
 npm test                 # Vitest
-npm run typecheck        # tsc --noEmit
+npm run typecheck        # tsc for the Functions and, with DOM types, for the admin page
 ```
 
-`functions/` holds the thin Pages Functions entry points, `src/` the logic (`rules`, `paths`, `listing`, `readme`, `html`, `zip-stream`, and the two route handlers), `public/` the static theme, `scripts/build-fonts.mjs` the font build, `test/` the tests and `docs/` the design specs.
+`functions/` holds the thin Pages Functions entry points, `src/` the logic (`rules`, `paths`, `short-url`, `listing`, `readme`, `html`, `zip-stream`, the route handlers, `access` and `admin-api`), `src/admin/` the admin page script, `public/` the static theme and admin page, `scripts/` the build scripts, `test/` the tests and `docs/` the design specs.
 
 ## Limits (Workers Free)
 
 The Workers Free plan allows **10 ms of CPU time per request**, 128 MB of memory, and 1,000 subrequests to Cloudflare services such as R2 per request ([limits](https://developers.cloudflare.com/workers/platform/limits/)). Time spent waiting on R2 doesn't count as CPU time.
 
-- **Share pages.** Typical shares (up to about 100 files) render well within the CPU budget. A README larger than 64 KiB is skipped, so the page has no README panel. As a safety net, a share whose listing exceeds 10,000 objects or 100 `list()` pages gets the generic error page, and the site never shows a partial tree. These caps are intentional and final.
+- **Share pages.** Typical shares (up to about 100 files) render well within the CPU budget. Decoding the token adds little: about 2 ms for the longest folder path R2 allows (measured in Node.js), far less for typical paths. A README larger than 64 KiB is skipped, so the page has no README panel. As a safety net, a share whose listing exceeds 10,000 objects or 100 `list()` pages gets the generic error page, and the site never shows a partial tree. These caps are intentional and final.
 - **ZIP downloads** stream STORE entries (no compression) with data descriptors and ZIP64 when needed, and a `Content-Length` computed up front. Memory stays small, but **CRC-32 is computed in JavaScript over every byte**. On the Free plan's 10 ms budget that probably limits a ZIP to a few MB. Past that the download fails partway (it never ends looking complete). **The real limit has to be measured after deployment** (see the checklist). If it's too low, keep `ENABLE_ZIP_DOWNLOAD` off or move to Workers Paid.
 - **ZIP subrequests.** One ZIP may plan at most 900 R2 calls (1 for the rules, plus one per `list()` page, plus one per file). A bigger share gets the generic error page before any bytes are sent.
 - An object that changes size or disappears between listing and download aborts the ZIP. There is no snapshot across objects.
@@ -206,17 +244,20 @@ The Workers Free plan allows **10 ms of CPU time per request**, 128 MB of memory
 
 ## Post-deploy checklist
 
-1. **Share page.** Open `https://<site-domain>/share/<an allowed dir>/`. Check the tree, sizes, README, and that a file link opens on the R2 public URL.
-2. **404.** Open an unlisted folder, a subfolder of an exact rule, and an excluded folder. All three should show the same "Share not found" page.
-3. **Live updates.** Upload a file and edit the rules file, then reload. The changes show up without a redeploy.
-4. **ZIP off/on.** With `ENABLE_ZIP_DOWNLOAD = "false"` there is no "Download all" button and `/api/share-zip?dir=…` returns `404`. Set it to `"true"` in the dashboard, redeploy, and check that the button appears and the archive passes `unzip -t`.
-5. **CPU test with real files (required if ZIP is on, spec §7.1).** Make a test share with files of increasing size (for example 1 MB, 5 MB, 20 MB) and download each share's ZIP while monitoring the logs:
+1. **Admin access.** Open `https://<site-domain>/admin/` and sign in through Access. Open `https://<project>.pages.dev/api/admin/rules` in a private window: Access should ask you to sign in, and a request without a valid token should never get anything but `403`.
+2. **Save and share.** Share a folder in the admin page, save, copy its short URL and open it. Check the tree, sizes, README, and that a file link opens on the R2 public URL.
+3. **Conflicts.** Open the admin page in two tabs, save in one, then save in the other. The second tab should show the "changed somewhere else" banner. On the very first save (no rules file yet) do the same, to confirm R2 refuses to create the file twice.
+4. **Sign out.** Press **Sign out**, then open `/admin/` again. Access should ask you to sign in again.
+5. **404.** Open the short URL of an unlisted folder, a subfolder of an exact rule, and an excluded folder (`npm run share-url -- <folder> https://<site-domain>`). All three should show the same "Share not found" page, and so should any old `/share/…` URL.
+6. **Live updates.** Upload a file and change a rule, then reload the share page. The changes show up without a redeploy.
+7. **ZIP off/on.** With `ENABLE_ZIP_DOWNLOAD = "false"` there is no "Download all" button and `/api/share-zip?token=…` returns `404`. Set it to `"true"` in the dashboard, redeploy, and check that the button appears and the archive passes `unzip -t`.
+8. **CPU test with real files (required if ZIP is on, spec §7.1).** Make a test share with files of increasing size (for example 1 MB, 5 MB, 20 MB) and download each share's ZIP while monitoring the logs:
 
    ```sh
    npx wrangler pages deployment tail --project-name <project-name> --format pretty
    ```
 
-   A request over the CPU limit is logged with an error outcome such as `exceededCpu` (add `--status error` to see only failures). In the browser it appears as a failed download or Cloudflare error 1102. The project's **Functions** metrics in the dashboard show the same errors. Record the largest share that still downloads reliably and communicate this limit to end users, or turn ZIP off.
+   A request over the CPU limit is logged with an error outcome such as `exceededCpu` (add `--status error` to see only failures). In the browser it appears as a failed download or Cloudflare error 1102. The project's **Functions** metrics in the dashboard show the same errors. Record the largest share that still downloads reliably and communicate this limit to end users, or turn ZIP off. While the tail runs, also open the share page of your longest folder path: it should stay well inside the budget, with no `exceededCpu`.
 
 ## Fonts and licenses
 
@@ -224,6 +265,8 @@ The Workers Free plan allows **10 ms of CPU time per request**, 128 MB of memory
 - **Chakra Petch** (SemiBold and Bold, Latin), the display font, from [`@fontsource/chakra-petch`](https://www.npmjs.com/package/@fontsource/chakra-petch). SIL Open Font License 1.1.
 
 The build copies the license texts into `public/fonts/licenses/`, so a deployed site serves them under `/fonts/licenses/` (for example `/fonts/licenses/LICENSE`, `/fonts/licenses/NOTICE.md` and `/fonts/licenses/ChakraPetch-OFL.txt`).
+
+The admin page script bundles [picomatch](https://github.com/micromatch/picomatch), [bs58](https://github.com/cryptocoinjs/bs58) and [base-x](https://github.com/cryptocoinjs/base-x), all MIT-licensed. Their license texts are served at `/admin/THIRD_PARTY_LICENSES.txt`.
 
 ## License
 

@@ -1,7 +1,7 @@
 # Simple R2 Share：規則編輯器與短網址設計規格
 
 **日期：** 2026-10-28  
-**狀態：** 待審閱（第 4 節的管理頁設計已由 [管理頁畫面與功能設計規格](2026-10-28-admin-ui-design.md) 取代）  
+**狀態：** 已核可（第 4 節的管理頁設計已由 [管理頁畫面與功能設計規格](2026-10-28-admin-ui-design.md) 取代）  
 **部署：** 原有單一 Cloudflare Pages 專案（Pages Functions + R2 binding）
 
 ## 1. 目標與已確認決策
@@ -27,7 +27,7 @@
 1. 使用既有路徑模組驗證 Bucket 相對資料夾，統一以不含頭尾斜線的正規化目錄字串表示。
 2. `TextEncoder` 將路徑轉為 UTF-8 位元組。
 3. 使用固定公開種子及位元組長度初始化輕量、確定性的 `xorshift32` 序列；逐位元組 XOR 產生混淆內容。反向流程重建同一個序列再 XOR，逐位元組還原。
-4. 使用標準 Bitcoin Base58 字元集及正規 Base58 編碼產生 token，字元集合為 `123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz`。解碼後檢查正規編碼、UTF-8 與合法分享路徑。
+4. 使用標準 Bitcoin Base58 字元集及正規 Base58 編碼產生 token，字元集合為 `123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz`。解碼後檢查 UTF-8 與合法分享路徑。標準 Base58 在字元集字串與位元組陣列之間是一對一的，每個通過字元檢查的 token 本身就是正規編碼，因此不在執行時重新編碼比對，改由測試驗證這個性質。
 
 XOR 對任意位元組序列可逆，標準 Base58 編碼可無損還原位元組，且同一個合法路徑產生固定 token。長度參與種子初始化，減少相同路徑前綴導致的固定遮罩規律。**固定種子完全公開，混淆僅改變外觀，不提供保密性、驗證或授權能力。** 取回路徑後，每次均重新執行 `isShareRoot()`，並以原有規則限制分享內容。
 

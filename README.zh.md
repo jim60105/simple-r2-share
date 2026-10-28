@@ -2,12 +2,14 @@
 
 [[English](README.md) | [正體中文](README.zh.md)]
 
-這是一套公開 [Cloudflare R2](https://developers.cloudflare.com/r2/) 儲存貯體專用的唯讀資料夾分享頁面，透過 Cloudflare Pages Functions 提供服務。使用者在儲存貯體根目錄維護一份規則檔案，列出想要分享的資料夾。每個分享的資料夾都會在 `/share/<資料夾>/` 產生獨立頁面，提供可展開的檔案樹狀圖、指向儲存貯體現有公開 URL 的檔案連結，並在下方呈現該資料夾的 `README.md`。系統也支援選用的「全部下載」ZIP 打包下載功能。每份頁面皆在收到請求時從儲存貯體當前內容即時建置，因此更新檔案或規則時無需重新發布或建置。
+這是一套公開 [Cloudflare R2](https://developers.cloudflare.com/r2/) 儲存貯體專用的唯讀資料夾分享頁面，透過 Cloudflare Pages Functions 提供服務。使用者在儲存貯體根目錄維護一份規則檔案，列出想要分享的資料夾；這份檔案可以透過受 Cloudflare Access 保護的管理頁，以資料夾樹狀圖編輯。每個分享的資料夾都有一個以短網址 `/s/<token>/` 開啟的頁面，提供可展開的檔案樹狀圖、指向儲存貯體現有公開 URL 的檔案連結，並在下方呈現該資料夾的 `README.md`。系統也支援選用的「全部下載」ZIP 打包下載功能。每份頁面皆在收到請求時從儲存貯體當前內容即時建置，因此更新檔案或規則時無需重新發布或建置。
 
 **功能特點**
 
-- 伺服器端渲染 HTML：本身不含 JavaScript，無任何外部請求。Content-Security-Policy 仍允許同源腳本，因此 Cloudflare 注入 `/cdn-cgi/scripts/…` 的功能（例如電子郵件地址混淆）可正常運作。資料夾使用原生 `<details>` 標籤，無需腳本即可展開與摺疊。
+- 伺服器端渲染的分享頁面：本身不含 JavaScript，無任何外部請求。Content-Security-Policy 仍允許同源腳本，因此 Cloudflare 注入 `/cdn-cgi/scripts/…` 的功能（例如電子郵件地址混淆）可正常運作。資料夾使用原生 `<details>` 標籤，無需腳本即可展開與摺疊。
 - 白名單規則檔案：採用類似 `.gitignore` 的語法（反向邏輯：未明文允許的項目皆不分享）。以 `!` 開頭的規則會隱藏資料夾與檔案。
+- 位於 `/admin/` 的[管理頁](#管理頁)：瀏覽儲存貯體的資料夾，將每個資料夾設為 Inherit、Share、Share + subfolders 或 Exclude，存檔前就能看到會改變的內容，並可複製資料夾的短網址。由 Cloudflare Access 保護，伺服器端也會再次驗證。
+- 不需要資料庫的短網址：token 就是經過混淆與 Base58 編碼的資料夾路徑，不必查表即可還原。
 - 直接連線：檔案連結與 README 圖片直接指向儲存貯體的公開 URL，不經過代理轉發。
 - 安全渲染 README：原始 HTML 均轉為純文字呈現；超出分享範圍或指向隱藏檔案的相對連結直接停用；禁止載入外部圖片。
 - 串流 ZIP 下載：支援將完整分享內容串流打包為 ZIP 檔案（STORE 模式，不壓縮），預設關閉。
@@ -15,14 +17,15 @@
 
 **非本專案目標**
 
-- 不支援檔案上傳、管理介面、登入驗證、密碼、權杖或下載頻寬限制。全站皆為唯讀模式。
+- 不支援檔案上傳、刪除檔案、使用者帳號、密碼或下載頻寬限制。訪客只能讀取，管理頁也只能改寫規則檔案。
+- 短網址不具保密性。任何人都能把 token 還原成資料夾路徑，每次請求仍會依規則檢查。
 - 不提供儲存貯體的存取控制。分享規則僅限制本站列出與打包的內容。**任何知曉或猜出 URL 的人員，依然可以直接存取儲存貯體公開 URL 上的所有物件**，包含隱藏檔案與規則檔案本身。請勿在儲存貯體存放機密資料。
 
 ## 運作原理
 
 ```text
-GET /share/releases/project-a/
-  → 驗證路徑（每個路徑片段解碼一次；出現 `..`、`%2F`、`%5C`、雙重編碼等情況 → 404）
+GET /s/hxR19djQFNp3SS7mNmos88qd/
+  → 將 token 解碼為 `releases/project-a`（不是 Base58、無效的 UTF-8、`..`、控制字元等情況 → 404）
   → 從 R2 讀取規則檔案（檔案缺失或格式錯誤 → 一律不分享）
   → 檢查 `releases/project-a` 是否為允許分享的根目錄？  否 → 404
   → 透過 R2 list() 讀取 `releases/project-a/` 內容並追蹤分頁游標
@@ -32,10 +35,12 @@ GET /share/releases/project-a/
 
 | URL | 功能說明 |
 | --- | --- |
-| `/share/<dir>/` | 儲存貯體資料夾 `<dir>` 的分享頁面，例如 `/share/releases/project-a/`。每個路徑片段僅進行一次百分比編碼（例如 `/share/releases/%E5%B0%88%E6%A1%88/`）。若結尾未加 `/`，系統會回傳 `308` 重新導向至標準路徑。 |
-| `/api/share-zip?dir=<dir>` | 提供相同分享目錄的 ZIP 打包檔案，例如 `/api/share-zip?dir=releases%2Fproject-a`。若 `ENABLE_ZIP_DOWNLOAD` 未設定為 `"true"`、該分享頁面回傳 `404` 或目錄內無檔案，此端點一律回傳 `404`。壓縮檔名稱取自資料夾名稱（例如 `project-a.zip`）。 |
+| `/s/<token>/` | token 所代表的儲存貯體資料夾的分享頁面，例如 `releases/project-a` 的分享頁面為 `/s/hxR19djQFNp3SS7mNmos88qd/`。可從管理頁複製，或以 `npm run share-url` 印出。若結尾未加 `/`，系統會回傳 `308` 重新導向至標準路徑。 |
+| `/api/share-zip?token=<token>` | 提供相同分享目錄的 ZIP 打包檔案。若 `ENABLE_ZIP_DOWNLOAD` 未設定為 `"true"`、該分享頁面回傳 `404` 或目錄內無檔案，此端點一律回傳 `404`。壓縮檔名稱取自資料夾名稱（例如 `project-a.zip`）。 |
+| `/admin/` | [管理頁](#管理頁)，只能透過 Cloudflare Access 進入。 |
+| `/api/admin/rules`、`/api/admin/folders` | 管理頁使用的 API。每次請求都必須帶有有效的 Cloudflare Access token，否則回傳 `403`。 |
 
-目錄不存在、未獲允許、被排除或 URL 格式錯誤，皆顯示完全相同的 `404` 頁面，訪客無法得知具體失敗原因。R2 發生錯誤或設定無效時，則顯示一般錯誤頁面（`500`）。詳細錯誤資訊僅記錄在 Functions 日誌。`GET` 與 `HEAD` 以外的 HTTP 方法皆回傳 `405`。
+目錄不存在、未獲允許、被排除或 token 無效，皆顯示完全相同的 `404` 頁面，訪客無法得知具體失敗原因。R2 發生錯誤或設定無效時，則顯示一般錯誤頁面（`500`）。詳細錯誤資訊僅記錄在 Functions 日誌。`GET` 與 `HEAD` 以外的 HTTP 方法皆回傳 `405`。
 
 ## 環境需求
 
@@ -56,6 +61,8 @@ GET /share/releases/project-a/
 | `FOOTER_HTML` | 否 | 單行 HTML 內容，會以**不跳脫**形式渲染在所有頁面的 `<footer>` 內，包含 404 與錯誤頁面。每個頁面的頁尾結尾固定顯示 `Powered by Simple R2 Share`，並連結至本專案；設定 `FOOTER_HTML` 時，其內容會排在前面，並以 ` • ` 分隔。留空或未設定時只顯示這段標示。此欄位視同程式碼，僅限網站管理員設定。頁面的 Content-Security-Policy 仍然有效，因此行內 `<script>` 與其他網站的腳本無法執行，`<style>` 標籤與外部樣式表會被阻擋，字型僅限從本站載入，圖片僅限從本站或 `R2_PUBLIC_BASE_URL` 來源載入。行內 `style="…"` 屬性與一般連結可正常運作。Cloudflare 對單一環境變數設有 5 KB 限制。 |
 | `BRAND_NAME` | 否 | 左上角品牌名稱的文字，同時作為頁面標題的後綴。以純文字處理並經過跳脫。預設為 `SIMPLE R2 SHARE`（數值留空時亦套用預設值）。 |
 | `BRAND_URL` | 否 | 點擊左上角品牌名稱時前往的連結，例如 `https://example.com/`。留空或未設定表示品牌名稱不設連結。 |
+| `ACCESS_TEAM_DOMAIN` | 使用管理頁時必填 | Cloudflare Zero Trust 的 team domain，格式必須是 `https://<team-name>.cloudflareaccess.com`。用來取得 Access 簽章公鑰並比對 token 的簽發者。未設定時，所有管理 API 請求都回傳 `403`。 |
+| `ACCESS_AUD` | 使用管理頁時必填 | 保護管理頁的 Access 應用程式的 Application Audience（AUD）tag。未設定時，所有管理 API 請求都回傳 `403`。 |
 
 ### 控制台設定
 
@@ -75,9 +82,34 @@ GET /share/releases/project-a/
 
 對 R2 物件與規則檔案所做的異動**無需**重新部署，下一次請求即可讀取最新內容。
 
+## 管理頁
+
+`/admin/` 以樹狀圖顯示儲存貯體的資料夾，每次展開才載入下一層。每個資料夾都有四個規則按鈕：
+
+| 按鈕 | 寫入的規則 | 意義 |
+| --- | --- | --- |
+| Inherit | 無 | 由上層資料夾的規則決定 |
+| Share | `folder/` | 該資料夾擁有分享頁面 |
+| Share + subfolders | `folder/**` | 該資料夾與所有未被排除的子資料夾都擁有分享頁面 |
+| Exclude | `!folder/` | 隱藏該資料夾及其內部所有內容 |
+
+按下 **SAVE** 之前，所有變更都只留在瀏覽器中：按鈕會標示已存檔的狀態、即將被改掉的狀態（外框）與新狀態（琥珀色），資料夾圖示則顯示套用後的結果。已分享資料夾旁的複製按鈕會把短網址放進剪貼簿。管理頁以固定、排序過的格式寫入規則檔案；無法以按鈕表示的規則（例如 `!**/*.tmp` 這類萬用字元規則，或結尾沒有 `/` 的規則）會列在警告中，並**在下次存檔時移除**。如果期間有其他人存檔，這次存檔會被拒絕，頁面會要求重新載入。
+
+每次呼叫管理 API 時，伺服器都會驗證 Access token，因此管理頁必須放在 Cloudflare Access 應用程式後面才能使用：
+
+1. 在 [Cloudflare One](https://one.dash.cloudflare.com/) 前往 **Access** > **Applications** > **Add an application** > **Self-hosted**。
+2. 為**每個提供本站的主機名稱**加入公開主機名稱與路徑：自訂網域、`<project>.pages.dev`，以及預覽部署使用的 `*.<project>.pages.dev`。每個主機名稱都要加入 `admin`、`admin/*` 與 `api/admin/*` 三個路徑。
+3. 加入一條 **Allow** 政策，只讓可以編輯規則的人通過，例如列出他們的電子郵件地址。
+4. 儲存後，從應用程式總覽頁複製 **Application Audience (AUD) Tag**。
+5. 在 Pages 專案的正式環境與 Preview 環境變數中設定 `ACCESS_TEAM_DOMAIN`（Zero Trust 的 team domain，`<team-name>.cloudflareaccess.com`，前面加上 `https://`）與 `ACCESS_AUD`，然後重新部署。
+
+**Sign out** 連到 `/cdn-cgi/access/logout`。Access 身分只用來判斷請求能否使用本站自己的 R2 綁定，不會轉換成任何 R2 權限，API 也只能寫入規則檔案。
+
+未設定這兩個變數時，管理 API 對所有請求都回傳 `403`，`npm run dev` 也是如此。在本機請改用 `npm run share-url -- <資料夾>` 取得分享網址。
+
 ## 規則檔案
 
-`.r2-share-rules`（或設定的 `SHARE_RULES_KEY`）是位於儲存貯體根目錄的單一 UTF-8 純文字物件，僅限管理員維護。未經規則允許的內容一律不予分享。
+`.r2-share-rules`（或設定的 `SHARE_RULES_KEY`）是位於儲存貯體根目錄的單一 UTF-8 純文字物件，平常透過[管理頁](#管理頁)維護。未經規則允許的內容一律不予分享。手動撰寫規則檔案時，下方的完整語法仍然適用，但管理頁下次存檔時會移除它無法表示的規則。
 
 ```gitignore
 # 僅分享此資料夾（其下所有階層的內容顯示在同一個頁面）
@@ -92,13 +124,13 @@ releases/project-b/**
 
 套用此規則檔案的效果如下：
 
-| URL | 結果 |
+| 資料夾的分享網址 | 結果 |
 | --- | --- |
-| `/share/releases/project-a/` | 產生專屬頁面，列出 `releases/project-a/` 底下所有深度的檔案 |
-| `/share/releases/project-a/docs/` | `404`。精確規則不會為子資料夾產生獨立頁面。 |
-| `/share/releases/project-a2/` | `404`。規則是以完整路徑片段進行比對，因此 `project-a` 不符合 `project-a2`。 |
-| `/share/releases/project-b/` 與 `/share/releases/project-b/sub/` | 產生專屬頁面，且不包含 `private/` 底下的任何內容 |
-| `/share/releases/project-b/private/` | `404` |
+| `releases/project-a` | 產生專屬頁面，列出 `releases/project-a/` 底下所有深度的檔案 |
+| `releases/project-a/docs` | `404`。精確規則不會為子資料夾產生獨立頁面。 |
+| `releases/project-a2` | `404`。規則是以完整路徑片段進行比對，因此 `project-a` 不符合 `project-a2`。 |
+| `releases/project-b` 與 `releases/project-b/sub` | 產生專屬頁面，且不包含 `private/` 底下的任何內容 |
+| `releases/project-b/private` | `404` |
 
 **語法規則**
 
@@ -133,7 +165,7 @@ npx wrangler r2 object put <bucket-name>/.r2-share-rules --file ./r2-share-rules
 
 部署時不需要修改本版本庫中的任何檔案。專案名稱、儲存貯體與各項變數全部在 Cloudflare 控制台設定。
 
-建置指令（`npm run build`，對應 `scripts/build-fonts.mjs`）會從 GitHub 下載固定版本的 Jim Mono TC Web 字型釋出檔，驗證 SHA-256 雜湊值（若不符則中斷建置），並將檔案與來自 `@fontsource/chakra-petch` 的 Chakra Petch 一併寫入 `public/fonts/`。`public/fonts/` 目錄由腳本產生並已被 git 忽略。位於 `functions/` 的 Pages Functions 會由 Pages 平台自動打包。
+建置指令（`npm run build`）會執行兩支腳本。`scripts/build-fonts.mjs` 會從 GitHub 下載固定版本的 Jim Mono TC Web 字型釋出檔，驗證 SHA-256 雜湊值（若不符則中斷建置），並將檔案與來自 `@fontsource/chakra-petch` 的 Chakra Petch 一併寫入 `public/fonts/`。`scripts/build-admin.mjs` 以 esbuild 將管理頁程式打包成 `public/admin/app.js`，並把打包進去的套件授權文字彙整成 `public/admin/THIRD_PARTY_LICENSES.txt`。這些產生的檔案皆已被 git 忽略。位於 `functions/` 的 Pages Functions 會由 Pages 平台自動打包。
 
 ### 選項 A：整合 Git 自動部署
 
@@ -165,14 +197,14 @@ Wrangler 會提示警告訊息，說明 `wrangler.toml` 未設定 `pages_build_o
 
 ### 初次部署完成後
 
-1. 上傳規則檔案（請參閱[規則檔案](#規則檔案)）。
+1. 設定[管理頁的 Cloudflare Access](#管理頁)，開啟 `/admin/` 並儲存第一份規則。也可以改用 Wrangler 上傳規則檔案（請參閱[規則檔案](#規則檔案)）。
 2. 逐項核對[部署後檢查清單](#部署後檢查清單)。
 
 ## 本機開發
 
 ```sh
 npm ci
-npm run build            # 下載字型至 public/fonts/（快取於 node_modules/.cache/）
+npm run build            # 下載字型至 public/fonts/（快取於 node_modules/.cache/），打包管理頁程式至 public/admin/
 npm run dev              # 啟動 wrangler pages dev → http://localhost:8788
 ```
 
@@ -183,22 +215,28 @@ npx wrangler r2 object put <bucket-name>/.r2-share-rules --file ./rules.txt --lo
 npx wrangler r2 object put <bucket-name>/releases/project-a/README.md --file ./README.md --local
 ```
 
-接著在瀏覽器打開 `http://localhost:8788/share/releases/project-a/`。由於本機儲存貯體並未公開提供 HTTP 服務，檔案連結與 README 圖片依然會指向 `R2_PUBLIC_BASE_URL`。若要在本機調整環境變數，可修改 `.dev.vars` 檔案（例如 `ENABLE_ZIP_DOWNLOAD="true"`）。
+接著印出該資料夾的本機分享網址，並在瀏覽器打開：
+
+```sh
+npm run share-url -- releases/project-a      # → http://localhost:8788/s/hxR19djQFNp3SS7mNmos88qd/
+```
+
+由於本機儲存貯體並未公開提供 HTTP 服務，檔案連結與 README 圖片依然會指向 `R2_PUBLIC_BASE_URL`。若要在本機調整環境變數，可修改 `.dev.vars` 檔案（例如 `ENABLE_ZIP_DOWNLOAD="true"`）。本機沒有 Cloudflare Access，因此管理 API 一律回傳 `403`；本專案刻意不提供關閉這項檢查的開關。修改 `src/admin/` 之後，請重新執行 `npm run build`。
 
 在 HTTP 代理伺服器環境下，若 Node 的 `fetch` 未能自動取用代理設定，可加上 `NODE_USE_ENV_PROXY=1` 執行建置（Node 需為 22.21 或更新版本）。
 
 ```sh
 npm test                 # 執行 Vitest 測試套件
-npm run typecheck        # 執行 tsc --noEmit 型別檢查
+npm run typecheck        # 以 tsc 檢查 Functions，並以 DOM 型別檢查管理頁
 ```
 
-目錄職責劃分：`functions/` 為精簡的 Pages Functions 進入點，`src/` 包含核心邏輯（`rules`、`paths`、`listing`、`readme`、`html`、`zip-stream` 以及兩組路由處理器），`public/` 存放靜態主題資源，`scripts/build-fonts.mjs` 負責下載字型，`test/` 存放測試案例，`docs/` 則包含規格設計文件。
+目錄職責劃分：`functions/` 為精簡的 Pages Functions 進入點，`src/` 包含核心邏輯（`rules`、`paths`、`short-url`、`listing`、`readme`、`html`、`zip-stream`、各路由處理器、`access` 與 `admin-api`），`src/admin/` 為管理頁程式，`public/` 存放靜態主題資源與管理頁，`scripts/` 存放建置腳本，`test/` 存放測試案例，`docs/` 則包含規格設計文件。
 
 ## 限制條件（Workers 免費方案）
 
 Workers 免費方案提供**每次請求 10 ms CPU 時間**、128 MB 記憶體，以及每次請求最多 1,000 次存取 Cloudflare 服務（包含 R2）的子請求上限（參考[官方限制文件](https://developers.cloudflare.com/workers/platform/limits/)）。等待 R2 回應的 I/O 時間不計入 CPU 時間。
 
-- **分享頁面**：一般規模的分享資料夾（約 100 個檔案以內）渲染耗時遠低於 CPU 配額上限。超過 64 KiB 的 README 檔案會被略過，該頁面不會顯示 README 區塊。作為防護機制，若單一分享目錄的物件總數超過 10,000 個或 `list()` 分頁超過 100 頁，系統會直接回傳一般錯誤頁面，絕不呈現不完整的樹狀圖。這些限制皆為明確設計的固定數值。
+- **分享頁面**：一般規模的分享資料夾（約 100 個檔案以內）渲染耗時遠低於 CPU 配額上限。解碼 token 的成本很低：R2 允許的最長資料夾路徑約需 2 ms（於 Node.js 量測），一般路徑遠低於此。超過 64 KiB 的 README 檔案會被略過，該頁面不會顯示 README 區塊。作為防護機制，若單一分享目錄的物件總數超過 10,000 個或 `list()` 分頁超過 100 頁，系統會直接回傳一般錯誤頁面，絕不呈現不完整的樹狀圖。這些限制皆為明確設計的固定數值。
 - **ZIP 打包下載**：以串流方式輸出 STORE 項目（不壓縮），必要時附加 data descriptor 與 ZIP64 標頭，並在傳輸前預先計算 `Content-Length`。此機制維持極低的記憶體佔用量，但 **CRC-32 是由 JavaScript 逐位元組計算**。在免費方案 10 ms CPU 時間限制下，單次可下載的 ZIP 檔案大小大約只有數 MB。一旦超過限制，下載便會中途失敗中斷（絕不會產生外表看似完整的損毀檔案）。**實際極限值必須在部署後自行量測**（請參閱檢查清單）。若此上限不符合需求，請關閉 `ENABLE_ZIP_DOWNLOAD`，或升級為 Workers 付費方案。
 - **ZIP 子請求次數**：單次 ZIP 打包最多規劃 900 次 R2 呼叫（規則讀取 1 次，加上每頁 `list()` 1 次，加上每個檔案各 1 次）。超過此規模的分享目錄會在傳輸任何位元組前直接回傳一般錯誤頁面。
 - 物件在讀取列表與實際下載之間若大小發生改變或遭到刪除，ZIP 傳輸程序會立即中止。本系統無法跨多個物件建立快照。
@@ -206,17 +244,20 @@ Workers 免費方案提供**每次請求 10 ms CPU 時間**、128 MB 記憶體�
 
 ## 部署後檢查清單
 
-1. **分享頁面**：開啟 `https://<site-domain>/share/<允許分享的資料夾>/`。檢查檔案樹狀圖、檔案大小、README 是否正常顯示，並確認檔案連結可連至 R2 公開 URL。
-2. **404 頁面**：嘗試開啟未列入規則的資料夾、精確規則底下的子資料夾，以及被排除的資料夾。三者皆應顯示完全相同的「Share not found」頁面。
-3. **即時更新**：上傳新檔案並修改規則檔案，重新整理瀏覽器。無須重新部署即可看到最新異動。
-4. **ZIP 下載開關**：當 `ENABLE_ZIP_DOWNLOAD = "false"` 時，頁面不應出現「全部下載」按鈕，且 `/api/share-zip?dir=…` 應回傳 `404`。在控制台將變數設定為 `"true"` 並重新部署，確認按鈕出現且下載的壓縮檔能通過 `unzip -t` 完整性測試。
-5. **以真實檔案測試 CPU 負載（若啟用 ZIP 下載，此為規格 §7.1 必要項目）**：建立包含遞增容量檔案的測試分享目錄（例如 1 MB、5 MB、20 MB），一邊下載各目錄的 ZIP 檔案，一邊透過日誌監控：
+1. **管理頁存取**：開啟 `https://<site-domain>/admin/` 並透過 Access 登入。在無痕視窗開啟 `https://<project>.pages.dev/api/admin/rules`：Access 應要求登入，而沒有有效 token 的請求只會得到 `403`。
+2. **存檔與分享**：在管理頁分享一個資料夾並存檔，複製它的短網址並開啟。檢查檔案樹狀圖、檔案大小、README 是否正常顯示，並確認檔案連結可連至 R2 公開 URL。
+3. **版本衝突**：在兩個分頁開啟管理頁，先在其中一個存檔，再到另一個存檔。第二個分頁應顯示「changed somewhere else」橫幅。在第一次存檔（尚無規則檔案）時也重複一次，確認 R2 不會重複建立檔案。
+4. **登出**：按下 **Sign out** 後再次開啟 `/admin/`，Access 應要求重新登入。
+5. **404 頁面**：開啟未列入規則的資料夾、精確規則底下的子資料夾，以及被排除的資料夾的短網址（`npm run share-url -- <資料夾> https://<site-domain>`）。三者皆應顯示完全相同的「Share not found」頁面，舊的 `/share/…` 網址也一樣。
+6. **即時更新**：上傳新檔案並修改規則，重新整理分享頁面。無須重新部署即可看到最新異動。
+7. **ZIP 下載開關**：當 `ENABLE_ZIP_DOWNLOAD = "false"` 時，頁面不應出現「全部下載」按鈕，且 `/api/share-zip?token=…` 應回傳 `404`。在控制台將變數設定為 `"true"` 並重新部署，確認按鈕出現且下載的壓縮檔能通過 `unzip -t` 完整性測試。
+8. **以真實檔案測試 CPU 負載（若啟用 ZIP 下載，此為規格 §7.1 必要項目）**：建立包含遞增容量檔案的測試分享目錄（例如 1 MB、5 MB、20 MB），一邊下載各目錄的 ZIP 檔案，一邊透過日誌監控：
 
    ```sh
    npx wrangler pages deployment tail --project-name <project-name> --format pretty
    ```
 
-   超過 CPU 限制的請求會在日誌中記錄錯誤狀態，例如 `exceededCpu`（可加上 `--status error` 僅檢視失敗請求）。在瀏覽器中會表現為下載中斷或 Cloudflare 1102 錯誤。控制台內的專案 **Functions** 指標也會記錄相同錯誤。實務上請記錄能夠穩定下載的最大容量並告知終端使用者，或是直接關閉 ZIP 下載功能。
+   超過 CPU 限制的請求會在日誌中記錄錯誤狀態，例如 `exceededCpu`（可加上 `--status error` 僅檢視失敗請求）。在瀏覽器中會表現為下載中斷或 Cloudflare 1102 錯誤。控制台內的專案 **Functions** 指標也會記錄相同錯誤。實務上請記錄能夠穩定下載的最大容量並告知終端使用者，或是直接關閉 ZIP 下載功能。監看日誌的同時，也請開啟路徑最長的資料夾的分享頁面：它應該遠低於 CPU 配額，且不出現 `exceededCpu`。
 
 ## 字型與授權
 
@@ -224,6 +265,8 @@ Workers 免費方案提供**每次請求 10 ms CPU 時間**、128 MB 記憶體�
 - **Chakra Petch**（SemiBold 與 Bold，西文字元），標題字型，來自 [`@fontsource/chakra-petch`](https://www.npmjs.com/package/@fontsource/chakra-petch)。採用 SIL Open Font License 1.1 授權。
 
 建置程序會將授權文件複製至 `public/fonts/licenses/`，因此部署後的網站會透過 `/fonts/licenses/` 提供這些文件（例如 `/fonts/licenses/LICENSE`、`/fonts/licenses/NOTICE.md` 與 `/fonts/licenses/ChakraPetch-OFL.txt`）。
+
+管理頁程式打包了 [picomatch](https://github.com/micromatch/picomatch)、[bs58](https://github.com/cryptocoinjs/bs58) 與 [base-x](https://github.com/cryptocoinjs/base-x)，三者皆採用 MIT 授權，授權文字可在 `/admin/THIRD_PARTY_LICENSES.txt` 取得。
 
 ## 授權條款
 

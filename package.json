@@ -11,6 +11,7 @@
   "scripts": {
     "build": "node scripts/build-fonts.mjs && node scripts/build-admin.mjs",
     "dev": "wrangler pages dev public",
+    "share-url": "node scripts/share-url.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.admin.json"
   },

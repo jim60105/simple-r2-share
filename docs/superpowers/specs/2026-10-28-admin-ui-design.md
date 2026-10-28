@@ -1,7 +1,7 @@
 # Simple R2 Share：管理頁畫面與功能設計規格
 
 **日期：** 2026-10-28  
-**狀態：** 待審閱  
+**狀態：** 已核可  
 **相關規格：** [規則編輯器與短網址設計規格](2026-10-28-rules-editor-short-url-design.md)、[分享頁 UI 主題設計規格](2026-10-27-ui-theme-design.md)  
 **參考原型：** [管理頁畫面原型](../prototypes/2026-10-28-admin-ui.html)（靜態畫面，以 IBM Plex Mono 代替 Jim Mono TC；與本規格不同時以本規格為準）
 
