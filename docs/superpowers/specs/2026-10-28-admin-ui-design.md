@@ -114,13 +114,16 @@ releases/project-b/**
   "text": "# Managed by ...\nreleases/project-a/\n",
   "etag": "\"a1b2c3\"",
   "savedAt": "2026-10-28T14:02:11Z",
-  "user": { "email": "admin@example.com" }
+  "user": { "email": "admin@example.com" },
+  "brandName": "SIMPLE R2 SHARE",
+  "rulesKey": ".r2-share-rules"
 }
 ```
 
 - `savedAt` 取自 R2 物件的 `uploaded` 時間。規則檔不存在時 `exists` 為 `false`，`text` 為空字串，`etag` 與 `savedAt` 為 `null`。
 - 規則檔超過 64 KiB 或不是 UTF-8 時，`text` 為空字串並附上 `invalid: "<problem>"`，前端依第 3.4 節處理。
 - `user.email` 取自已驗證 JWT 的 `email` 欄位，沒有這個欄位時為 `null`。
+- 管理頁是靜態檔，讀不到部署設定，所以回應另外帶上 `brandName`（來自 `BRAND_NAME`，未設定時為預設品牌名稱）與 `rulesKey`（來自 `SHARE_RULES_KEY`），分別給頂部列與不支援行橫幅使用。
 
 ### 5.2 `PUT /api/admin/rules`
 
