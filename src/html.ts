@@ -74,7 +74,7 @@
  *                                     the bullet only follows FOOTER_HTML
  */
 import { DEFAULT_BRAND_NAME, type AppConfig, type PageChrome } from "./config";
-import { bytesQuantity, fileCountQuantity, folderCountQuantity, formatBytes, formatItemCount, formatSyncedTime, type Quantity } from "./format";
+import { bytesQuantity, CJK_RUN, fileCountQuantity, folderCountQuantity, formatBytes, formatItemCount, formatSyncedTime, type Quantity } from "./format";
 import type { Listing, TreeNode } from "./listing";
 import { publicUrl, zipDownloadPath } from "./paths";
 import type { Readme } from "./readme";
@@ -141,10 +141,6 @@ function icon(id: string, className: string): string {
 const CARET_ICON = icon("caret", "row__caret");
 const FOLDER_ICON = icon("folder", "row__icon");
 const FILE_ICON = icon("file", "row__icon");
-
-// Han, kana, Hangul, Bopomofo, CJK punctuation and full-width forms: the
-// characters that come from Jim Mono TC's CJK design rather than Chakra Petch.
-const CJK_RUN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Bopomofo}\u3000-\u303F\uFF00-\uFFEF]+/gu;
 
 /**
  * The escaped brand name with every CJK run in `span.brand__cjk`. CJK glyphs

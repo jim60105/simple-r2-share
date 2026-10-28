@@ -92,3 +92,8 @@ function pad2(n: number): string {
 function join(quantity: Quantity): string {
   return `${quantity.value} ${quantity.unit}`;
 }
+
+// Han, kana, Hangul, Bopomofo, CJK punctuation and full-width forms: the
+// characters that come from Jim Mono TC's CJK design rather than Chakra Petch.
+// The brand wraps each run in `.brand__cjk` (share pages and the admin page).
+export const CJK_RUN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Bopomofo}\u3000-\u303F\uFF00-\uFFEF]+/gu;

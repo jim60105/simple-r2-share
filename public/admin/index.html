@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex, nofollow">
+<title>Share rules · Admin</title>
+<link rel="stylesheet" href="/fonts/JimMonoTC.css">
+<link rel="stylesheet" href="/assets/theme.css">
+<link rel="stylesheet" href="/admin/admin.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<script type="module" src="/admin/app.js"></script>
+</head>
+<body>
+<!-- Admin UI spec §6. src/admin/ fills the marked containers; nothing here is inline script or style. -->
+<svg class="sprite" width="0" height="0" aria-hidden="true">
+  <symbol id="icon-logo" viewBox="0 0 24 24"><path d="M7 2h10l5 5v10l-5 5H7l-5-5V7z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 15.5 15.5 8M12 16h4v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol>
+  <symbol id="icon-folder" viewBox="0 0 16 16"><path d="M1.5 3.5h5l1.5 2h6.5v8h-13z" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+  <symbol id="icon-caret" viewBox="0 0 10 10"><path d="M3 1.5 7 5 3 8.5" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+  <symbol id="icon-inherit" viewBox="0 0 20 20"><circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.6 2.6"/></symbol>
+  <symbol id="icon-share" viewBox="0 0 20 20"><path d="M11 3.5h5.5V9M16.5 3.5 9 11M14 11.5v5H3.5V6h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"/></symbol>
+  <symbol id="icon-share-sub" viewBox="0 0 20 20"><path d="M12.5 2.5h5v5M17.5 2.5 12 8M3.5 3v12.5H7M3.5 9.5H7M8 7.5h3.5V11H8zM8 13.75h3.5v3.5H8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"/></symbol>
+  <symbol id="icon-exclude" viewBox="0 0 20 20"><circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.5 14.5 14.5 5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"/></symbol>
+  <symbol id="icon-copy" viewBox="0 0 20 20"><path d="M7 7h9.5v9.5H7z M13 7V3.5H3.5V13H7" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+  <symbol id="icon-check" viewBox="0 0 20 20"><path d="M4 10.5 8 14.5 16 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol>
+  <symbol id="icon-close" viewBox="0 0 20 20"><path d="M5 5 15 15M15 5 5 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square"/></symbol>
+</svg>
+
+<header class="topbar">
+  <span class="brand"><svg class="icon brand__glyph" aria-hidden="true"><use href="#icon-logo"/></svg><span class="brand__name" id="brand-name">SIMPLE R2 SHARE</span><span class="tag tag--accent admin-tag">ADMIN</span></span>
+  <nav class="account" aria-label="Account"><span class="account__email" id="user-email" hidden></span><a class="account__signout" href="/cdn-cgi/access/logout">Sign out</a></nav>
+</header>
+
+<main class="main">
+  <section class="hero" aria-labelledby="page-title">
+    <h1 class="hero__title" id="page-title">Share rules</h1>
+    <p class="stats" id="stats">LOADING…</p>
+  </section>
+
+  <div class="banners" id="banners"></div>
+
+  <section class="panel panel--folders" aria-labelledby="folders-title">
+    <div class="panel__head folders-head">
+      <div class="folders-head__columns">
+        <h2 class="panel__title" id="folders-title">FOLDERS</h2>
+        <span class="folders-head__column" aria-hidden="true">RULE</span>
+        <span class="folders-head__column folders-head__column--link" aria-hidden="true">LINK</span>
+      </div>
+      <ul class="legend" aria-label="Legend">
+        <li><svg class="legend__icon" aria-hidden="true"><use href="#icon-inherit"/></svg>Inherit</li>
+        <li><svg class="legend__icon" aria-hidden="true"><use href="#icon-share"/></svg>Share</li>
+        <li><svg class="legend__icon" aria-hidden="true"><use href="#icon-share-sub"/></svg>Share + subfolders</li>
+        <li><svg class="legend__icon" aria-hidden="true"><use href="#icon-exclude"/></svg>Exclude</li>
+        <li><span class="swatch swatch--live" aria-hidden="true"></span>Live</li>
+        <li><span class="swatch swatch--before" aria-hidden="true"></span>Before</li>
+        <li><span class="swatch swatch--after" aria-hidden="true"></span>After</li>
+      </ul>
+    </div>
+    <div class="folders" id="folders"><p class="panel__empty">Loading…</p></div>
+  </section>
+</main>
+
+<div class="actionbar" id="actionbar" hidden>
+  <div class="actionbar__inner">
+    <p class="actionbar__summary"><b class="actionbar__count" id="pending-count"></b> <span class="actionbar__note" id="unsupported-note"></span></p>
+    <div class="actionbar__buttons">
+      <button type="button" class="button button--ghost" id="discard">DISCARD</button>
+      <button type="button" class="button button--solid" id="save">SAVE</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-region" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

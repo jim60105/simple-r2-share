@@ -1,0 +1,751 @@
+/*
+ * Simple R2 Share · admin page (docs/superpowers/specs/2026-10-28-admin-ui-design.md §6, §8).
+ * Loaded after /assets/theme.css and reuses its tokens, top bar, hero, panel
+ * and button. Markup: public/admin/index.html plus the rows that
+ * src/admin/render.ts builds. No font size below 16px; every color is a token.
+ */
+
+/* ===== Tokens (§6.8) ===== */
+:root {
+  --pending: #ffc24a;
+  --pending-ink: #1a1204;
+  --pending-bg: #ffc24a0d;
+
+  --pending-banner-bg: #ffc24a0a;
+  --danger-bg: #ff5c6c0d;
+  --dim: #4a6070;
+  --shadow: #000000aa;
+
+  /* Folder rows: name column, four 44px rule buttons plus borders, copy button. */
+  --rule-width: 178px;
+  --link-width: 64px;
+  --frow-gap: var(--space-6);
+  --frow-pad-left: calc(var(--panel-pad) + var(--space-1));
+  --frow-pad-right: var(--panel-pad);
+  /* Room the fixed action bar takes at the bottom of the page. */
+  --actionbar-space: 76px;
+}
+
+@media (max-width: 560px) {
+  :root {
+    --actionbar-space: 136px;
+  }
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Long and short forms of the same text (§6.3, §6.5); one is always hidden. */
+.narrow-only {
+  display: none;
+}
+
+body.has-actionbar {
+  padding-bottom: calc(var(--actionbar-space) + env(safe-area-inset-bottom, 0px));
+}
+
+/* ===== Tags ===== */
+.tag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 24px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  font-family: var(--font-content);
+  font-size: var(--text-base);
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.tag--accent {
+  color: var(--accent);
+}
+
+.tag--pending {
+  color: var(--pending);
+}
+
+.tag--muted {
+  color: var(--muted);
+}
+
+.tag__short {
+  display: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.tag__icon {
+  width: 14px;
+  height: 14px;
+}
+
+.tag__square {
+  width: 8px;
+  height: 8px;
+  background: currentColor;
+}
+
+/* ===== Top bar (§6.1) ===== */
+.admin-tag {
+  min-height: 26px;
+  padding: 0 var(--space-2);
+  letter-spacing: var(--tracking-label);
+}
+
+.account {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-4);
+  color: var(--muted);
+}
+
+.account__signout {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  color: var(--link);
+  text-underline-offset: 3px;
+}
+
+/* ===== Banners (§6.3) ===== */
+.banners {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.banners:empty {
+  display: none;
+}
+
+.banner {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid;
+}
+
+.banner--pending {
+  border-color: var(--pending);
+  background: var(--pending-banner-bg);
+}
+
+.banner--danger {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.banner__title {
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: var(--tracking-label);
+}
+
+.banner--pending .banner__title {
+  color: var(--pending);
+}
+
+.banner--danger .banner__title {
+  color: var(--danger);
+}
+
+.banner__text {
+  margin: 0;
+}
+
+.banner__lines {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--code-bg);
+}
+
+.banner__lines dt {
+  color: var(--muted);
+}
+
+.banner__lines dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.banner__lines code {
+  font-family: var(--font-content);
+  font-size: var(--text-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.banner .button {
+  justify-self: start;
+}
+
+/* ===== Buttons on top of theme.css .button ===== */
+button.button {
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.button--solid {
+  color: var(--accent-ink);
+}
+
+.button--solid::before {
+  background-color: var(--accent);
+}
+
+.button--ghost {
+  color: var(--muted);
+}
+
+.button--ghost::after {
+  background-color: var(--line);
+}
+
+button.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* ===== FOLDERS panel (§6.4) ===== */
+.folders-head {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.folders-head__columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--rule-width) var(--link-width);
+  align-items: center;
+  column-gap: var(--frow-gap);
+}
+
+.folders-head__column {
+  color: var(--muted);
+  letter-spacing: var(--tracking-label);
+}
+
+.folders-head__column--link {
+  text-align: right;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.legend__icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+
+.swatch {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.swatch--live {
+  background: var(--accent);
+}
+
+.swatch--before {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.swatch--after {
+  background: var(--pending);
+}
+
+/* ===== Folder tree (§6.5) ===== */
+.ftree,
+.ftree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One row per folder. --depth (set from script) indents the name and draws a
+ * 1px guide per level under the parent's caret. */
+.frow {
+  --depth: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--rule-width) var(--link-width);
+  grid-template-areas: "name rule link";
+  align-items: center;
+  column-gap: var(--frow-gap);
+  min-height: 56px;
+  padding: 0 var(--frow-pad-right) 0 var(--frow-pad-left);
+  border-top: 1px solid var(--line);
+  background-image: repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px var(--indent));
+  background-position: calc(var(--frow-pad-left) + var(--caret) / 2 - 1px) 0;
+  background-size: calc(var(--depth) * var(--indent)) 100%;
+  background-repeat: no-repeat;
+  transition: background-color var(--duration) ease;
+}
+
+.ftree > li:first-child > .frow {
+  border-top: 0;
+}
+
+.frow--pending {
+  background-color: var(--pending-bg);
+}
+
+.frow__name {
+  display: flex;
+  grid-area: name;
+  align-items: center;
+  gap: var(--row-gap);
+  min-width: 0;
+  min-height: var(--tap);
+  padding-left: calc(var(--depth) * var(--indent));
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Caret, folder icon and name form one toggle; tags follow it. */
+.frow__toggle {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--row-gap);
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.frow__toggle:disabled {
+  cursor: default;
+}
+
+.frow__caret {
+  flex: none;
+  width: var(--caret);
+  height: var(--caret);
+  color: var(--muted);
+  transition: transform var(--duration) ease;
+}
+
+.frow__toggle[aria-expanded="true"] .frow__caret {
+  color: var(--accent);
+  transform: rotate(90deg);
+}
+
+.frow__toggle:disabled .frow__caret {
+  visibility: hidden;
+}
+
+.frow__folder {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+
+.frow__folder.is-shared {
+  color: var(--accent);
+}
+
+.frow__folder.is-excluded {
+  color: var(--danger);
+}
+
+.frow__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.frow--ghost .frow__label {
+  color: var(--muted);
+  text-decoration: underline dashed 1px;
+  text-underline-offset: 4px;
+}
+
+/* Rule: four native radios in a fieldset, drawn as icon buttons. */
+.rule {
+  position: relative;
+  display: flex;
+  grid-area: rule;
+  width: max-content;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+}
+
+.rule__option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 40px;
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color var(--duration) ease, color var(--duration) ease;
+}
+
+.rule__option:first-of-type {
+  border-left: 0;
+}
+
+.rule__icon {
+  width: 20px;
+  height: 20px;
+}
+
+.rule__option.is-live {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.rule__option.is-before {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  color: var(--accent);
+}
+
+.rule__option.is-after {
+  background: var(--pending);
+  color: var(--pending-ink);
+}
+
+.rule__input:disabled + .rule__option {
+  color: var(--dim);
+  cursor: not-allowed;
+}
+
+.rule__input:focus-visible + .rule__option {
+  z-index: 1;
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.frow__link {
+  display: flex;
+  grid-area: link;
+  justify-content: flex-end;
+}
+
+.copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 1px solid var(--accent);
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background-color var(--duration) ease;
+}
+
+.copy:disabled {
+  border: 1px dashed var(--line);
+  color: var(--dim);
+  cursor: not-allowed;
+}
+
+.copy__icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* LOAD MORE, loading and error rows of one level (§7.2). */
+.frow--status {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "name";
+}
+
+.frow__status {
+  display: flex;
+  flex-wrap: wrap;
+  grid-area: name;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  min-height: var(--tap);
+  padding: var(--space-2) 0 var(--space-2) calc(var(--depth) * var(--indent) + var(--caret) + var(--row-gap));
+  color: var(--muted);
+}
+
+.frow__status p {
+  margin: 0;
+}
+
+/* ===== Action bar (§6.6) ===== */
+.actionbar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  padding: var(--space-3) var(--gutter-right) calc(var(--space-3) + env(safe-area-inset-bottom, 0px)) var(--gutter-left);
+  border-top: 1px solid var(--pending);
+  background: var(--surface-hero);
+}
+
+.actionbar__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+  max-width: var(--layout-max);
+  margin-inline: auto;
+}
+
+.actionbar__summary {
+  margin: 0;
+  letter-spacing: var(--tracking-label);
+}
+
+.actionbar__count {
+  color: var(--pending);
+}
+
+.actionbar__note {
+  color: var(--muted);
+}
+
+.actionbar__buttons {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* ===== Toast (§6.7) ===== */
+.toast-region {
+  position: fixed;
+  right: max(var(--gutter-right), calc((100vw - var(--layout-max)) / 2));
+  bottom: var(--space-4);
+  z-index: 20;
+  width: min(560px, calc(100vw - var(--gutter-left) - var(--gutter-right)));
+  pointer-events: none;
+}
+
+body.has-actionbar .toast-region {
+  bottom: calc(var(--actionbar-space) + var(--space-4) + env(safe-area-inset-bottom, 0px));
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--accent);
+  background: var(--surface-hero);
+  box-shadow: 0 8px 24px var(--shadow);
+  pointer-events: auto;
+}
+
+.toast--error {
+  border-color: var(--danger);
+}
+
+.toast__icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  color: var(--ok);
+}
+
+.toast--error .toast__icon {
+  color: var(--danger);
+}
+
+.toast__body {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.toast__title {
+  font-weight: 700;
+  letter-spacing: var(--tracking-label);
+}
+
+.toast__text {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A failed copy shows the whole URL, ready to select and copy by hand. */
+.toast--error .toast__text {
+  color: var(--fg);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.toast__close {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.toast__close svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ===== Hover (pointer devices only) ===== */
+@media (hover: hover) {
+  .account__signout:hover {
+    text-decoration-thickness: 2px;
+  }
+
+  .frow__toggle:not(:disabled):hover .frow__label {
+    text-decoration: underline;
+  }
+
+  .rule__input:not(:disabled) + .rule__option:not(.is-live, .is-after):hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+
+  .copy:not(:disabled):hover,
+  .toast__close:hover {
+    background: var(--hover);
+  }
+
+  .button--solid:hover {
+    color: var(--accent-ink);
+  }
+
+  .button--ghost:hover {
+    color: var(--fg);
+  }
+
+  .button--ghost:hover::before {
+    background-color: var(--hover);
+  }
+
+  button.button:disabled:hover {
+    color: inherit;
+  }
+
+  button.button:disabled:hover::before {
+    background-color: transparent;
+  }
+
+  .button--solid:disabled:hover::before {
+    background-color: var(--accent);
+  }
+}
+
+/* ===== Narrow screens (§8.1) ===== */
+@media (max-width: 560px) {
+  .wide-only {
+    display: none;
+  }
+
+  .narrow-only {
+    display: inline;
+  }
+
+  .tag__long {
+    display: none;
+  }
+
+  .tag__short {
+    display: inline-flex;
+  }
+
+  .folders-head__columns {
+    display: block;
+  }
+
+  .folders-head__column {
+    display: none;
+  }
+
+  .banner {
+    padding: 14px;
+  }
+
+  /* Two lines: name and copy button, then the rule buttons under the name. */
+  .frow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "name link"
+      "rule rule";
+    row-gap: var(--space-2);
+    min-height: 0;
+    padding-block: 10px;
+  }
+
+  .rule {
+    margin-left: min(calc(var(--depth) * var(--indent) + var(--caret) + var(--row-gap)), calc(100% - var(--rule-width)));
+  }
+
+  .actionbar__inner {
+    display: grid;
+  }
+
+  .actionbar__buttons {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .toast-region {
+    right: var(--gutter-right);
+    left: var(--gutter-left);
+    width: auto;
+  }
+}
