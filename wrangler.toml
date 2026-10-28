@@ -14,6 +14,9 @@ bucket_name = "your-bucket-name"
 # The bucket's existing public HTTPS base URL (custom domain or r2.dev).
 # A value without a scheme (e.g. "files.example.com") gets https:// added.
 R2_PUBLIC_BASE_URL = "https://files.example.com"
+# Comma-separated exact DNS hostnames for external HTTPS README images.
+# Example: "images.example.com,cdn.example.org". Empty blocks external images.
+README_IMAGE_DOMAINS = ""
 # Only the exact string "true" enables the "Download all" ZIP endpoint.
 ENABLE_ZIP_DOWNLOAD = "false"
 # Object key of the share rules file, relative to the bucket root.

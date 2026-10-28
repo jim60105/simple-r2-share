@@ -71,6 +71,38 @@ function expectCommonHeaders(response: Response, contentType: string | null = "t
 }
 
 describe("authorised share", () => {
+  it("allows only configured HTTPS image hosts in both Markdown and CSP", async () => {
+    const bucket = seededBucket().add("releases/project-a/README.md", [
+      "![first](https://images.example.com/a.png)",
+      "![second](https://cdn.example.org:443/b.png)",
+      "![subdomain](https://sub.images.example.com/c.png)",
+      "![suffix](https://images.example.com.evil.test/d.png)",
+      "![http](http://images.example.com/e.png)",
+      "![port](https://images.example.com:8443/f.png)",
+      "![credentials](https://user:pass@images.example.com/g.png)",
+      "![data](data:image/png;base64,AAAA)",
+      "![network](//images.example.com/h.png)",
+    ].join("\n"));
+    const overrides = { README_IMAGE_DOMAINS: " Images.Example.com,cdn.example.org " };
+    const path = share("releases", "project-a");
+    const { response, body } = await get(bucket, path, overrides);
+    expect(response.status).toBe(200);
+    expect(body).toContain('<img src="https://images.example.com/a.png" alt="first">');
+    expect(body).toContain('<img src="https://cdn.example.org/b.png" alt="second">');
+    for (const alt of ["subdomain", "suffix", "http", "port", "credentials", "data", "network"]) {
+      expect(body).toContain(`title="Not available in this share">${alt}</span>`);
+    }
+    expect(response.headers.get("Content-Security-Policy")).toContain(
+      `img-src 'self' ${PUBLIC_BASE} https://images.example.com https://cdn.example.org;`,
+    );
+    const denied = await get(bucket, path);
+    expect(denied.body).not.toContain('<img src="https://images.example.com/');
+    expect(denied.response.headers.get("Content-Security-Policy")).not.toContain("https://images.example.com");
+    const redirect = await get(bucket, path.slice(0, -1), overrides);
+    expect(redirect.response.status).toBe(308);
+    expect(redirect.response.headers.get("Content-Security-Policy")).toBe(response.headers.get("Content-Security-Policy"));
+  });
+
   it("renders the tree and README with 200", async () => {
     const { response, body } = await get(seededBucket(), share("releases", "project-a"));
     expect(response.status).toBe(200);

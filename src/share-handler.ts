@@ -41,7 +41,7 @@ const TEXT_TYPE = "text/plain; charset=utf-8";
 /**
  * Content-Security-Policy for every response of this route. The pages contain
  * no script of their own; styles, fonts and the favicon come from this origin;
- * the only cross-origin loads are README images on the R2 public domain.
+ * cross-origin images use the R2 public origin or configured README domains.
  *
  * `script-src 'self'` exists for Cloudflare zone features that inject a
  * same-origin `/cdn-cgi/scripts/…` file into the HTML, such as Email Address
@@ -55,14 +55,14 @@ const TEXT_TYPE = "text/plain; charset=utf-8";
  * stylesheets stay blocked by `style-src 'self'`. Style attributes cannot run
  * code, and README raw HTML is disabled, so visitors' content cannot add them.
  */
-export function contentSecurityPolicy(imageOrigin: string | null): string {
+export function contentSecurityPolicy(imageOrigin: string | null, imageDomains: readonly string[] = []): string {
   return [
     "default-src 'none'",
     "script-src 'self'",
     "style-src 'self'",
     "style-src-attr 'unsafe-inline'",
     "font-src 'self'",
-    `img-src 'self'${imageOrigin ? ` ${imageOrigin}` : ""}`,
+    `img-src 'self'${imageOrigin ? ` ${imageOrigin}` : ""}${imageDomains.map((domain) => ` https://${domain}`).join("")}`,
     "base-uri 'none'",
     "form-action 'none'",
     "frame-ancestors 'none'",
@@ -74,12 +74,12 @@ export function contentSecurityPolicy(imageOrigin: string | null): string {
  * `imageOrigin` is the R2 public origin, or `null` when the configuration
  * could not be loaded (the error page shows no images anyway).
  */
-export function responseHeaders(contentType: string | null, imageOrigin: string | null): Headers {
+export function responseHeaders(contentType: string | null, imageOrigin: string | null, imageDomains: readonly string[] = []): Headers {
   const headers = new Headers();
   if (contentType !== null) headers.set("Content-Type", contentType);
   // Pages reflect the current rules and objects; no CDN or browser may keep them (spec §6).
   headers.set("Cache-Control", "no-store");
-  headers.set("Content-Security-Policy", contentSecurityPolicy(imageOrigin));
+  headers.set("Content-Security-Policy", contentSecurityPolicy(imageOrigin, imageDomains));
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "DENY");
   // Cross-origin requests (R2 files, README links) get the origin only, never the share path.
@@ -92,7 +92,10 @@ function imageOriginOf(config: AppConfig | null): string | null {
 }
 
 function htmlResponse(status: number, html: string, config: AppConfig | null, head: boolean): Response {
-  return new Response(head ? null : html, { status, headers: responseHeaders(HTML_TYPE, imageOriginOf(config)) });
+  return new Response(head ? null : html, {
+    status,
+    headers: responseHeaders(HTML_TYPE, imageOriginOf(config), config?.readmeImageDomains),
+  });
 }
 
 /** `405` for anything but `GET` / `HEAD`, with `Allow`. */
@@ -158,7 +161,7 @@ export async function handleShareRequest(request: Request, env: Env, now: Date =
       case "not-found":
         return notFoundResponse(config, now, head);
       case "redirect": {
-        const headers = responseHeaders(null, imageOriginOf(config));
+        const headers = responseHeaders(null, imageOriginOf(config), config.readmeImageDomains);
         headers.set("Location", outcome.location);
         return new Response(null, { status: 308, headers });
       }
@@ -186,6 +189,8 @@ async function resolveShare(pathname: string, bucket: R2Bucket, config: AppConfi
   if (readmeFile !== null && readmeFile.size > MAX_README_BYTES) {
     console.warn(`share page: ${readmeFile.key} is larger than ${MAX_README_BYTES} bytes and is not shown`);
   }
-  const readme = await loadReadme(bucket, { listing, rules, publicBaseUrl: config.publicBaseUrl });
+  const readme = await loadReadme(bucket, {
+    listing, rules, publicBaseUrl: config.publicBaseUrl, readmeImageDomains: config.readmeImageDomains,
+  });
   return { kind: "page", html: renderSharePage({ token, segments, listing, readme, config, now }) };
 }

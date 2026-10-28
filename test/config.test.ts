@@ -7,6 +7,7 @@ describe("loadConfig", () => {
   it("applies defaults when only the public URL is set", () => {
     expect(loadConfig(BASE)).toEqual({
       publicBaseUrl: "https://files.example.com",
+      readmeImageDomains: [],
       zipEnabled: false,
       shareRulesKey: ".r2-share-rules",
       footerHtml: null,
@@ -14,6 +15,19 @@ describe("loadConfig", () => {
       brandUrl: null,
     });
     expect(DEFAULT_SHARE_RULES_KEY).toBe(".r2-share-rules");
+  });
+
+  describe("README_IMAGE_DOMAINS", () => {
+    it("normalizes a comma-separated image domain list", () => {
+      expect(loadConfig({ ...BASE, README_IMAGE_DOMAINS: " Images.Example.com, cdn.example.org,,images.example.com " }).readmeImageDomains)
+        .toEqual(["images.example.com", "cdn.example.org"]);
+    });
+
+    it.each(["https://example.com", "*.example.com", "example.com:443", "example.com/path",
+      "user@example.com", "example.com; script-src *", "-bad.example", "bad_.example", "example.com.",
+      "a".repeat(64) + ".example", "127.1", "127.0.0.1", "999.999", "example.123"])("rejects invalid image domain %j", (domain) => {
+      expect(() => loadConfig({ ...BASE, README_IMAGE_DOMAINS: domain })).toThrow(ConfigError);
+    });
   });
 
   describe("ENABLE_ZIP_DOWNLOAD", () => {

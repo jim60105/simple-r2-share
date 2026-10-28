@@ -37,6 +37,7 @@ function listing(files: Record<string, number>, prefix = PREFIX, shareRules = AL
 function config(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     publicBaseUrl: BASE,
+    readmeImageDomains: [],
     zipEnabled: false,
     shareRulesKey: RULES_KEY,
     footerHtml: null,

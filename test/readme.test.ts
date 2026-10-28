@@ -42,14 +42,14 @@ async function setup(
   const fake = bucket(files);
   const page = await fake.list({ prefix: PREFIX });
   const listing = buildListing(page.objects, PREFIX, rulesForShare);
-  return { fake, context: { listing, rules: rulesForShare, publicBaseUrl: BASE } };
+  return { fake, context: { listing, rules: rulesForShare, publicBaseUrl: BASE, readmeImageDomains: [] } };
 }
 
 /** A context whose listing holds the given share-relative files (contents irrelevant). */
 function contextWith(paths: string[], rulesForShare: Rules = DEFAULT_RULES): ReadmeContext {
   const objects = paths.map((path) => ({ key: path.startsWith("/") ? path.slice(1) : PREFIX + path, size: 1, uploaded: new Date(0) }));
   const listing: Listing = buildListing(objects, PREFIX, rulesForShare);
-  return { listing, rules: rulesForShare, publicBaseUrl: BASE };
+  return { listing, rules: rulesForShare, publicBaseUrl: BASE, readmeImageDomains: [] };
 }
 
 const FILES = [

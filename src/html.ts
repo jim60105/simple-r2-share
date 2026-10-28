@@ -1,10 +1,10 @@
 /**
  * Server-rendered pages (spec §9 `html`; UI spec §5, §7, §10, §11): the share
  * page, the `404` page and the generic error page. Pure string building, one
- * pass, joined once; the pages contain no `<script>` and load nothing from
- * external domains (the only absolute URLs are R2 public object URLs, the
- * trusted brand link, links inside the trusted footer / rendered README and
- * the "Powered by" credit).
+ * pass, joined once; the pages contain no `<script>`. Images load from R2
+ * and configured README image domains. Absolute links also include the
+ * trusted brand link, trusted footer / rendered README links and the
+ * "Powered by" credit.
  *
  * Escaping: every dynamic text and attribute value goes through `escapeHtml`.
  * The only raw insertions are this module's static markup, `Readme.html`

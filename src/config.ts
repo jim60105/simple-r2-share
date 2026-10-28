@@ -2,6 +2,7 @@
 export interface Env {
   BUCKET: R2Bucket;
   R2_PUBLIC_BASE_URL?: string;
+  README_IMAGE_DOMAINS?: string;
   ENABLE_ZIP_DOWNLOAD?: string;
   SHARE_RULES_KEY?: string;
   FOOTER_HTML?: string;
@@ -20,6 +21,8 @@ export interface AppConfig {
    * `${publicBaseUrl}/${encodedSegments.join("/")}`.
    */
   publicBaseUrl: string;
+  /** Exact DNS hostnames allowed for external HTTPS README images. */
+  readmeImageDomains: readonly string[];
   zipEnabled: boolean;
   shareRulesKey: string;
   /** Trusted footer HTML rendered verbatim, or `null` for none (the "Powered by" credit still shows). */
@@ -46,6 +49,7 @@ type ConfigVars = Omit<Env, "BUCKET">;
 export function loadConfig(env: ConfigVars): AppConfig {
   return {
     publicBaseUrl: parsePublicBaseUrl(env.R2_PUBLIC_BASE_URL),
+    readmeImageDomains: parseReadmeImageDomains(env.README_IMAGE_DOMAINS),
     zipEnabled: env.ENABLE_ZIP_DOWNLOAD === "true",
     shareRulesKey: env.SHARE_RULES_KEY || DEFAULT_SHARE_RULES_KEY,
     ...pageChromeFromEnv(env),
@@ -64,6 +68,28 @@ export function pageChromeFromEnv(env: Pick<ConfigVars, "FOOTER_HTML" | "BRAND_N
     brandName: env.BRAND_NAME || DEFAULT_BRAND_NAME,
     brandUrl: env.BRAND_URL || null,
   };
+}
+
+function parseReadmeImageDomains(raw: string | undefined): readonly string[] {
+  const domains = new Set<string>();
+  for (const entry of (raw ?? "").split(",")) {
+    const domain = entry.trim().toLowerCase();
+    if (domain === "") continue;
+    if (
+      domain.length > 253 ||
+      !domain.split(".").every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) ||
+      /^[\d.]+$/.test(domain)
+    ) {
+      throw new ConfigError("README_IMAGE_DOMAINS must contain comma-separated DNS hostnames");
+    }
+    try {
+      if (new URL(`https://${domain}`).hostname !== domain) throw new Error("Noncanonical hostname");
+    } catch {
+      throw new ConfigError("README_IMAGE_DOMAINS must contain comma-separated DNS hostnames");
+    }
+    domains.add(domain);
+  }
+  return [...domains];
 }
 
 function parsePublicBaseUrl(raw: string | undefined): string {

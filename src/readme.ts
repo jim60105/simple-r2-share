@@ -31,9 +31,9 @@
  * - Absolute hrefs are kept only for links whose scheme is exactly `http:` or
  *   `https:`. `javascript:`, `data:`, `mailto:`, `vbscript:`, `file:`, `//host`
  *   and everything else are unavailable.
- * - External images (`http:`/`https:`) are blocked too: the page must not load
- *   anything from external domains (UI spec §11, §13). Only relative images
- *   that resolve to an object in this share are shown, from the R2 public URL.
+ * - External images require HTTPS and an exact hostname in the configured
+ *   allowlist. Credentials and nondefault ports are blocked. Relative images
+ *   must resolve to an object in this share, served from the R2 public URL.
  * - Fragment-only hrefs (`#section`) are unavailable: README headings carry
  *   no `id`, so the anchor would lead nowhere.
  *
@@ -83,6 +83,7 @@ export interface ReadmeContext {
   readonly rules: Rules;
   /** `AppConfig.publicBaseUrl`. */
   readonly publicBaseUrl: string;
+  readonly readmeImageDomains: readonly string[];
 }
 
 /** The README file the share page should show, or `null` (spec §6 step 4). */
@@ -238,7 +239,13 @@ rules.image = (tokens, idx, options, env, renderer) => {
   const state = stateOf(env);
   const alt = renderer.renderInlineAsText(token.children ?? [], options, env);
   const verdict = classifyHref(hrefOf(token, "src"), state.context, state.shareSegments);
-  if (verdict.kind !== "share") {
+  let allowed = verdict.kind === "share";
+  if (verdict.kind === "external") {
+    const url = new URL(verdict.url);
+    allowed = url.protocol === "https:" && url.port === "" && url.username === "" && url.password === "" &&
+      state.context.readmeImageDomains.includes(url.hostname);
+  }
+  if (verdict.kind === "unavailable" || !allowed) {
     return alt === "" ? "" : `${unavailableOpen()}${escapeHtml(alt)}</span>`;
   }
   return `<img src="${escapeHtml(verdict.url)}" alt="${escapeHtml(alt)}"${titleAttr(token)}>`;
