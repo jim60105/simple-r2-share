@@ -41,6 +41,9 @@
  *
  * Globs are compiled once when the file is parsed (Workers Free has a 10 ms
  * CPU budget); create one `Rules` per request and reuse it for every key.
+ *
+ * This module is pure and shared with the admin page; reading the rules object
+ * from R2 lives in `src/rules-store.ts`.
  */
 import picomatch from "picomatch/posix";
 import { isSafeKey } from "./paths";
@@ -67,6 +70,13 @@ export interface ShareRule {
   readonly dirOnly: boolean;
   /** Pattern ended with `/**`: matches the directory and all its descendants. */
   readonly recursive: boolean;
+  /**
+   * The folder path this rule names when every segment of `body` is a plain
+   * name (escapes removed, e.g. `a\*b` -> `a*b`), otherwise `null` (any glob
+   * such as `*`, `?`, `[ab]` or a `**` segment). The admin page only manages
+   * rules whose `literal` is set.
+   */
+  readonly literal: readonly string[] | null;
 }
 
 export interface Rules {
@@ -81,52 +91,19 @@ export interface Rules {
    */
   isShareRoot(segments: readonly string[]): boolean;
   /**
+   * Whether the directory or any ancestor directory is excluded: its last
+   * matching rule is an exclusion. Exclusion always wins over a deeper allow,
+   * so nothing at or below such a directory can be shared. `false` for the
+   * bucket root, invalid segments and rules that are not `loaded` (a broken
+   * file means "not shared", not "excluded").
+   */
+  isDirExcluded(segments: readonly string[]): boolean;
+  /**
    * Whether an object key must be hidden from listings, README links and ZIPs.
    * Always `true` for the rules object itself, for keys that are not
    * `isSafeKey`, and for every key when the rules are not `loaded`.
    */
   isExcluded(key: string): boolean;
-}
-
-/** Reading the rules object from R2 failed; routes should answer with the generic error page. */
-export class RulesReadError extends Error {
-  override name = "RulesReadError";
-}
-
-/**
- * Reads and parses the rules object.
- *
- * - Missing object: deny-all rules with status `missing`.
- * - Larger than `MAX_RULES_FILE_BYTES`, not valid UTF-8 or any invalid line:
- *   deny-all rules with status `invalid` and a `problem` for the server log.
- * - R2 errors (`get` or reading the body throws) are NOT turned into deny-all
- *   rules: they are rethrown as `RulesReadError`, so the route shows the
- *   generic error page (spec §8 "R2 temporary failure") instead of a `404`
- *   that would make a working share look deleted. Either way nothing is
- *   authorised and the response reveals nothing about the bucket.
- */
-export async function loadRules(bucket: R2Bucket, rulesKey: string): Promise<Rules> {
-  let bytes: ArrayBuffer;
-  try {
-    const object = await bucket.get(rulesKey);
-    if (object === null) return denyAll("missing", "rules object not found");
-    if (object.size > MAX_RULES_FILE_BYTES) {
-      await object.body.cancel().catch(() => undefined);
-      return denyAll("invalid", `rules object is larger than ${MAX_RULES_FILE_BYTES} bytes`);
-    }
-    bytes = await object.arrayBuffer();
-  } catch (error) {
-    throw new RulesReadError("failed to read the share rules object", { cause: error });
-  }
-
-  let text: string;
-  try {
-    // `fatal` rejects invalid UTF-8; a leading BOM is skipped.
-    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
-  } catch {
-    return denyAll("invalid", "rules object is not valid UTF-8");
-  }
-  return parseRules(text, rulesKey);
 }
 
 /**
@@ -156,6 +133,7 @@ export function denyAll(status: Exclude<RulesStatus, "loaded">, problem: string)
     problem,
     rules: [],
     isShareRoot: () => false,
+    isDirExcluded: () => false,
     isExcluded: () => true,
   };
 }
@@ -186,20 +164,25 @@ class MatchingRules implements Rules {
   constructor(rulesKey: string, compiled: readonly CompiledRule[]) {
     this.#rulesKey = rulesKey;
     this.#compiled = compiled;
-    this.rules = compiled.map(({ line, body, exclude, dirOnly, recursive }) => ({
+    this.rules = compiled.map(({ line, body, exclude, dirOnly, recursive, literal }) => ({
       line,
       body,
       exclude,
       dirOnly,
       recursive,
+      literal,
     }));
   }
 
   isShareRoot(segments: readonly string[]): boolean {
-    if (segments.length === 0 || segments.some((segment) => segment.includes("/"))) return false;
-    if (!isSafeKey(segments.join("/"))) return false;
+    if (!isValidDir(segments)) return false;
     if (this.#hasExcludedAncestor(segments)) return false;
     return this.#verdict(segments, true) === "allow";
+  }
+
+  isDirExcluded(segments: readonly string[]): boolean {
+    if (!isValidDir(segments)) return false;
+    return this.#hasExcludedAncestor(segments) || this.#isExcludedDir(segments);
   }
 
   isExcluded(key: string): boolean {
@@ -211,16 +194,20 @@ class MatchingRules implements Rules {
   /** Whether any proper ancestor directory of `segments` is excluded. */
   #hasExcludedAncestor(segments: readonly string[]): boolean {
     for (let depth = 1; depth < segments.length; depth++) {
-      const dir = segments.slice(0, depth);
-      const cacheKey = dir.join("/");
-      let excluded = this.#dirExcluded.get(cacheKey);
-      if (excluded === undefined) {
-        excluded = this.#verdict(dir, true) === "exclude";
-        this.#dirExcluded.set(cacheKey, excluded);
-      }
-      if (excluded) return true;
+      if (this.#isExcludedDir(segments.slice(0, depth))) return true;
     }
     return false;
+  }
+
+  /** Whether the directory's own last matching rule is an exclusion (cached). */
+  #isExcludedDir(dir: readonly string[]): boolean {
+    const cacheKey = dir.join("/");
+    let excluded = this.#dirExcluded.get(cacheKey);
+    if (excluded === undefined) {
+      excluded = this.#verdict(dir, true) === "exclude";
+      this.#dirExcluded.set(cacheKey, excluded);
+    }
+    return excluded;
   }
 
   /** The last matching rule's verdict for one path (last match wins). */
@@ -233,6 +220,10 @@ class MatchingRules implements Rules {
     }
     return null;
   }
+}
+
+function isValidDir(segments: readonly string[]): boolean {
+  return segments.length > 0 && !segments.some((segment) => segment.includes("/")) && isSafeKey(segments.join("/"));
 }
 
 function ruleMatches(rule: CompiledRule, path: readonly string[], isDir: boolean): boolean {
@@ -362,7 +353,8 @@ function parseLine(rawLine: string, line: number): CompiledRule | string | null 
     matchers.pop();
     sources.pop();
   }
-  return { line, body: sources.join("/"), exclude, dirOnly, recursive, segments: matchers };
+  const literal = matchers.length > 0 && matchers.every((matcher) => typeof matcher === "string") ? matchers : null;
+  return { line, body: sources.join("/"), exclude, dirOnly, recursive, literal, segments: matchers };
 }
 
 /** Drops trailing spaces and tabs, keeping one that is escaped by an odd run of backslashes. */

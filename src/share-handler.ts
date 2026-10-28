@@ -29,7 +29,8 @@ import { renderErrorPage, renderNotFoundPage, renderSharePage } from "./html";
 import { loadListing } from "./listing";
 import { parseShortSharePath, shortSharePath, toPrefix } from "./paths";
 import { loadReadme, MAX_README_BYTES, selectReadme } from "./readme";
-import { loadRules, type Rules } from "./rules";
+import { type Rules } from "./rules";
+import { loadRules } from "./rules-store";
 import { decodeShareToken } from "./short-url";
 
 export const ALLOWED_METHODS = "GET, HEAD";

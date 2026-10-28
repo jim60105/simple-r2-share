@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_RULES_FILE_BYTES, RulesReadError, denyAll, loadRules, parseRules, type Rules } from "../src/rules";
-import { FakeBucket } from "./fake-bucket";
+import { denyAll, parseRules, type Rules } from "../src/rules";
 
 const RULES_KEY = ".r2-share-rules";
 
@@ -40,9 +39,16 @@ describe("spec §4 example", () => {
   it("parses three rules", () => {
     expect(spec.status).toBe("loaded");
     expect(spec.rules).toEqual([
-      { line: 2, body: "releases/project-a", exclude: false, dirOnly: true, recursive: false },
-      { line: 5, body: "releases/project-b", exclude: false, dirOnly: false, recursive: true },
-      { line: 8, body: "releases/project-b/private", exclude: true, dirOnly: true, recursive: false },
+      { line: 2, body: "releases/project-a", exclude: false, dirOnly: true, recursive: false, literal: dir("releases/project-a") },
+      { line: 5, body: "releases/project-b", exclude: false, dirOnly: false, recursive: true, literal: dir("releases/project-b") },
+      {
+        line: 8,
+        body: "releases/project-b/private",
+        exclude: true,
+        dirOnly: true,
+        recursive: false,
+        literal: dir("releases/project-b/private"),
+      },
     ]);
   });
 
@@ -341,9 +347,9 @@ describe("file format", () => {
   it("\\# and \\! match a literal leading # or !", () => {
     const r = rules("\\#notes/", "\\!important/", "!\\!secret/");
     expect(r.rules).toEqual([
-      { line: 1, body: "\\#notes", exclude: false, dirOnly: true, recursive: false },
-      { line: 2, body: "\\!important", exclude: false, dirOnly: true, recursive: false },
-      { line: 3, body: "\\!secret", exclude: true, dirOnly: true, recursive: false },
+      { line: 1, body: "\\#notes", exclude: false, dirOnly: true, recursive: false, literal: ["#notes"] },
+      { line: 2, body: "\\!important", exclude: false, dirOnly: true, recursive: false, literal: ["!important"] },
+      { line: 3, body: "\\!secret", exclude: true, dirOnly: true, recursive: false, literal: ["!secret"] },
     ]);
     expect(r.isShareRoot(["#notes"])).toBe(true);
     expect(r.isShareRoot(["!important"])).toBe(true);
@@ -497,77 +503,76 @@ describe("denyAll", () => {
   });
 });
 
-describe("loadRules", () => {
-  it("loads and parses the rules object", async () => {
-    const bucket = new FakeBucket().put(RULES_KEY, SPEC_EXAMPLE);
-    const r = await loadRules(bucket.asR2Bucket(), RULES_KEY);
-    expect(r.status).toBe("loaded");
-    expect(r.isShareRoot(dir("releases/project-a"))).toBe(true);
-    expect(bucket.getCalls).toEqual([RULES_KEY]);
+describe("ShareRule.literal", () => {
+  it.each([
+    ["releases/project-a/", ["releases", "project-a"]],
+    ["releases/project-b/**", ["releases", "project-b"]],
+    ["!releases/private/", ["releases", "private"]],
+    ["/rooted/", ["rooted"]],
+    ["a\\*b/", ["a*b"]],
+    ["\\#x/\\!y/\\ z\\?/", ["#x", "!y", " z?"]],
+    ["發佈/專案 A/", ["發佈", "專案 A"]],
+    ["file.txt", ["file.txt"]],
+  ])("%j -> %j", (line, expected) => {
+    expect(rules(line).rules[0]?.literal).toEqual(expected);
   });
 
-  it("reads the configured key", async () => {
-    const bucket = new FakeBucket().put(RULES_KEY, "a/\n").put("custom", "b/\n");
-    const r = await loadRules(bucket.asR2Bucket(), "custom");
-    expect(r.isShareRoot(["a"])).toBe(false);
-    expect(r.isShareRoot(["b"])).toBe(true);
-    expect(r.isExcluded("custom")).toBe(true);
+  it.each(["a/**/b/", "a/*/", "a/b?/", "[ab]/", "**", "/**", "**/x/", "a*/"])("%j is not literal", (line) => {
+    expect(rules(line).rules[0]?.literal).toBeNull();
+  });
+});
+
+describe("isDirExcluded", () => {
+  it("covers the directory itself and every ancestor", () => {
+    const r = rules("a/**", "!a/b/", "a/b/c/");
+    expect(r.isDirExcluded(["a"])).toBe(false);
+    expect(r.isDirExcluded(["a", "b"])).toBe(true);
+    expect(r.isDirExcluded(["a", "b", "c"])).toBe(true);
+    expect(r.isDirExcluded(["a", "x"])).toBe(false);
+    expect(r.isShareRoot(["a", "b", "c"])).toBe(false);
   });
 
-  it("skips a UTF-8 BOM", async () => {
-    const bytes = new Uint8Array([0xef, 0xbb, 0xbf, ...new TextEncoder().encode("a/\n")]);
-    const r = await loadRules(new FakeBucket().put(RULES_KEY, bytes).asR2Bucket(), RULES_KEY);
-    expect(r.status).toBe("loaded");
-    expect(r.isShareRoot(["a"])).toBe(true);
+  it("follows last match wins for the directory itself", () => {
+    const r = rules("!a/", "a/");
+    expect(r.isDirExcluded(["a"])).toBe(false);
+    expect(rules("a/", "!a/").isDirExcluded(["a"])).toBe(true);
   });
 
-  it("denies everything when the rules object is missing", async () => {
-    const r = await loadRules(new FakeBucket().put("a/x", "x").asR2Bucket(), RULES_KEY);
-    expect(r.status).toBe("missing");
-    expect(r.isShareRoot(["a"])).toBe(false);
-    expect(r.isExcluded("a/x")).toBe(true);
+  it("treats a recursive exclusion as excluding the directory", () => {
+    const r = rules("!a/**");
+    expect(r.isDirExcluded(["a"])).toBe(true);
+    expect(r.isDirExcluded(["a", "b"])).toBe(true);
   });
 
-  it("denies everything when the rules object has an invalid line", async () => {
-    const r = await loadRules(new FakeBucket().put(RULES_KEY, "a/\n  !a/secret/\n").asR2Bucket(), RULES_KEY);
-    expect(r.status).toBe("invalid");
-    expect(r.problem).toMatch(/^line 2:/);
-    expect(r.isShareRoot(["a"])).toBe(false);
+  it("is false for the bucket root, invalid segments and broken rules", () => {
+    const r = rules("!a/");
+    expect(r.isDirExcluded([])).toBe(false);
+    expect(r.isDirExcluded(["a/b"])).toBe(false);
+    expect(r.isDirExcluded([".."])).toBe(false);
+    expect(denyAll("missing", "x").isDirExcluded(["a"])).toBe(false);
+    expect(parseRules("[unclosed", RULES_KEY).isDirExcluded(["a"])).toBe(false);
   });
 
-  it("denies everything when the rules object is not valid UTF-8", async () => {
-    const bytes = new Uint8Array([0x61, 0x2f, 0x0a, 0xff, 0xfe]);
-    const r = await loadRules(new FakeBucket().put(RULES_KEY, bytes).asR2Bucket(), RULES_KEY);
-    expect(r.status).toBe("invalid");
-    expect(r.problem).toMatch(/UTF-8/);
-    expect(r.isShareRoot(["a"])).toBe(false);
-  });
-
-  it("denies everything when the rules object is too large", async () => {
-    const body = `a/\n${"#".repeat(MAX_RULES_FILE_BYTES)}\n`;
-    const r = await loadRules(new FakeBucket().put(RULES_KEY, body).asR2Bucket(), RULES_KEY);
-    expect(r.status).toBe("invalid");
-    expect(r.isShareRoot(["a"])).toBe(false);
-  });
-
-  it("accepts a file of exactly the maximum size", async () => {
-    const body = `a/\n${"#".repeat(MAX_RULES_FILE_BYTES - 3)}`;
-    const r = await loadRules(new FakeBucket().put(RULES_KEY, body).asR2Bucket(), RULES_KEY);
-    expect(r.status).toBe("loaded");
-  });
-
-  it("throws RulesReadError when R2 get fails", async () => {
-    const bucket = new FakeBucket().put(RULES_KEY, "a/\n");
-    const cause = new Error("R2 unavailable");
-    bucket.failGet = () => cause;
-    const promise = loadRules(bucket.asR2Bucket(), RULES_KEY);
-    await expect(promise).rejects.toBeInstanceOf(RulesReadError);
-    await expect(promise).rejects.toMatchObject({ cause });
-  });
-
-  it("throws RulesReadError when reading the body fails", async () => {
-    const bucket = new FakeBucket().put(RULES_KEY, "a/\n");
-    bucket.failBody = () => new Error("stream reset");
-    await expect(loadRules(bucket.asR2Bucket(), RULES_KEY)).rejects.toBeInstanceOf(RulesReadError);
+  it("agrees with isExcluded for a child file when no rule can match files", () => {
+    // Directory-only rules never match a file, so the file's verdict comes
+    // from its ancestors alone.
+    let seed = 7;
+    const next = (n: number) => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) % n;
+    const names = ["a", "b", "c"];
+    const parts = [...names, "*", "?", "[ab]"];
+    for (let run = 0; run < 200; run++) {
+      const lines = Array.from({ length: 1 + next(5) }, () => {
+        const depth = 1 + next(3);
+        const body = Array.from({ length: depth }, () => parts[next(parts.length)]).join("/");
+        return `${next(2) === 0 ? "!" : ""}${body}/`;
+      });
+      const r = rules(...lines);
+      for (let probe = 0; probe < 10; probe++) {
+        const dirPath = Array.from({ length: 1 + next(3) }, () => names[next(names.length)] as string);
+        expect(r.isDirExcluded(dirPath), `${lines.join(" | ")} @ ${dirPath.join("/")}`).toBe(
+          r.isExcluded(`${dirPath.join("/")}/x`),
+        );
+      }
+    }
   });
 });
