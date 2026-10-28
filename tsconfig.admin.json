@@ -1,0 +1,13 @@
+{
+  // The admin page runs in the browser: DOM types, no Workers types. Shared
+  // modules it imports (src/rules.ts, src/paths.ts, src/short-url.ts,
+  // src/rules-editor.ts) are checked here too, so a Workers-only global in
+  // one of them fails this check.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src/admin/**/*.ts"],
+  "exclude": []
+}

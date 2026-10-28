@@ -8,3 +8,11 @@
 # new deploy takes effect immediately.
 /fonts/*
   Cache-Control: public, max-age=86400
+
+# The admin page (admin UI spec §10): same-origin script, styles, fonts and
+# API calls only. No inline script or style attributes, so neither needs an
+# exception. `no-cache` makes browsers revalidate app.js after every deploy.
+# Cloudflare Access protects these paths before they reach Pages.
+/admin/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Cache-Control: no-cache

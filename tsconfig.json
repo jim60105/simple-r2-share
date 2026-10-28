@@ -15,5 +15,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "functions/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "functions/**/*.ts", "test/**/*.ts", "vitest.config.ts"],
+  "exclude": ["src/admin/**"]
 }
