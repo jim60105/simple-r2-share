@@ -27,8 +27,11 @@ const FORBIDDEN_RAW_ESCAPE = /%(?:2f|5c|00)/i;
 // RFC 3986 scheme, e.g. `https:`, `mailto:`, `javascript:`.
 const URL_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
-/** Rules for one segment of an R2 object key (keys may contain a literal `%XX`). */
-function isSafeKeySegment(segment: string): boolean {
+/**
+ * Rules for one segment of an R2 object key or share token path (keys may
+ * contain a literal `%XX`; token paths are never percent-decoded).
+ */
+export function isValidSegment(segment: string): boolean {
   return (
     segment !== "" &&
     segment !== "." &&
@@ -41,7 +44,7 @@ function isSafeKeySegment(segment: string): boolean {
 
 /** Rules for one decoded segment that came from a URL or query parameter. */
 function isSafeDecodedSegment(segment: string): boolean {
-  return isSafeKeySegment(segment) && !LEFTOVER_ESCAPE.test(segment);
+  return isValidSegment(segment) && !LEFTOVER_ESCAPE.test(segment);
 }
 
 /** Checks on the still-encoded text, before any decoding happens. */
@@ -131,7 +134,7 @@ export function zipDownloadPath(segments: readonly string[]): string {
  * in `/` are not safe object keys. A literal `%XX` in a key is fine.
  */
 export function isSafeKey(key: string): boolean {
-  return key !== "" && key.split("/").every(isSafeKeySegment);
+  return key !== "" && key.split("/").every(isValidSegment);
 }
 
 /**

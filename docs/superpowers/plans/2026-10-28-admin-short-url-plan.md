@@ -77,7 +77,7 @@ export function decodeShareToken(token: string): string[] | null;
   1. 長度介於 1 與 `MAX_TOKEN_LENGTH` 之間，而且每個字元都在 Base58 字元集中。這一步在呼叫 `bs58` 之前完成。
   2. `bs58.decodeUnsafe()` 成功。
   3. 位元組長度介於 1 與 `MAX_PATH_BYTES` 之間。
-  4. 重新編碼的結果必須等於輸入，以確保 token 是正規形式。
+  4. 不在執行時重新編碼比對。標準 Base58 在字元集字串與位元組陣列之間是一對一的，通過第 1 步的 token 一定是正規形式；重新編碼會讓解碼成本變成三倍（1024 位元組時從 1.7 ms 增加到 6 ms 以上），改由屬性測試驗證這個性質。
   5. 反向混淆後，以 `new TextDecoder("utf-8", { fatal: true })` 解碼成功。
   6. 以 `/` 切開後，每個區段都通過 `isValidSegment()`。
 - 測試（`test/short-url.test.ts`）：
@@ -85,7 +85,7 @@ export function decodeShareToken(token: string): string[] | null;
   - 固定向量：三個路徑（`releases/project-a`、`發佈/專案 A`、1024 位元組邊界路徑）的 token 寫死在測試中。演算法若被意外修改，已發出的網址會全部失效，固定向量可以及早發現。
   - 相同前綴、不同長度的路徑，混淆遮罩不同。
   - 拒絕：空字串、非 Base58 字元（`0`、`O`、`I`、`l`、`/`）、1401 個字元、非正規編碼、無效 UTF-8、空區段、`.`、`..`、反斜線、控制字元、超過 1024 位元組。
-  - 粗略 CPU 檢查：在 Node 中對 1024 位元組路徑的 token 重複解碼 100 次，平均每次低於 2 ms。這只是防止明顯退化，正式預算在任務 11 量測。
+  - 粗略 CPU 檢查：在 Node 中對 1024 位元組路徑的 token 重複解碼 100 次，平均每次低於 4 ms（實測約 1.7 ms）。這只是防止明顯退化，正式預算在任務 11 量測；若 Workers 實測超出預算，再改寫解碼核心。
 - `npm install bs58@6.0.0 --save-exact`。
 
 ### 2. `paths` 與公開路由改用短網址

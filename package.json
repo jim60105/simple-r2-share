@@ -23,6 +23,7 @@
     "wrangler": "4.153.0"
   },
   "dependencies": {
+    "bs58": "6.0.0",
     "client-zip": "2.5.1",
     "markdown-it": "15.0.3",
     "picomatch": "4.0.7"
