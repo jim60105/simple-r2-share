@@ -7,6 +7,10 @@ export interface Env {
   FOOTER_HTML?: string;
   BRAND_NAME?: string;
   BRAND_URL?: string;
+  /** Cloudflare Access team domain, e.g. `https://myteam.cloudflareaccess.com` (admin UI spec §9). */
+  ACCESS_TEAM_DOMAIN?: string;
+  /** AUD tag of the Access application that protects the admin page. */
+  ACCESS_AUD?: string;
 }
 
 export interface AppConfig {

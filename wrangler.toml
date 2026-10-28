@@ -25,3 +25,9 @@ FOOTER_HTML = ""
 BRAND_NAME = ""
 # Link target of the top-left brand. Empty means the brand is not a link.
 BRAND_URL = ""
+# Cloudflare Access team domain (https://<team>.cloudflareaccess.com) and the
+# AUD tag of the Access application protecting /admin and /api/admin/*. The
+# admin API refuses every request (403) unless both are set and the request
+# carries a valid Access JWT, so locally the admin API always answers 403.
+ACCESS_TEAM_DOMAIN = ""
+ACCESS_AUD = ""
